@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kilix-pdf-conversion"
+version = "0.1.0"
+description = "Validated multi-engine PDF-to-Markdown conversion workflow"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "itsmygithubacct" }]
+keywords = ["document-ai", "docling", "markdown", "ocr", "pdf"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing :: Markup",
+]
+dependencies = [
+  "pymupdf>=1.27.0,<1.28",
+  "pymupdf4llm>=1.27.0,<1.28",
+]
+
+[project.optional-dependencies]
+granite = [
+  "docling[vlm]>=2.118,<3",
+  "pypdfium2>=5.12,<6",
+]
+marker = ["marker-pdf>=1.10,<2"]
+test = ["pytest>=8.3"]
+dev = ["build>=1.2", "pytest>=8.3", "ruff>=0.15"]
+
+[project.scripts]
+kilix-pdf = "kilix_pdf_conversion.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/itsmygithubacct/kilix-pdf-conversion"
+Repository = "https://github.com/itsmygithubacct/kilix-pdf-conversion.git"
+Issues = "https://github.com/itsmygithubacct/kilix-pdf-conversion/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E4", "E7", "E9", "F", "I", "UP"]

@@ -1,0 +1,28 @@
+[workflow]
+profile = "balanced"
+output_root = "./output"
+copy_source = true
+render_visual_pages = true
+force = false
+
+[analysis]
+reliable_page_characters = 80
+native_page_ratio = 0.80
+scan_page_ratio = 0.20
+max_table_scan_pages = 24
+
+[granite]
+device = "cuda"
+page_batch_size = 1
+threads = 4
+document_timeout = 1800
+chart_extraction = false
+
+[marker]
+device = "auto"
+
+[validation]
+minimum_markdown_bytes = 200
+minimum_native_token_recall = 0.90
+maximum_repeated_short_line_count = 20
+fail_on_image_placeholders = true
