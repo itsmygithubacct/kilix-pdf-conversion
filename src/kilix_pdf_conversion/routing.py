@@ -43,7 +43,7 @@ def plan_route(analysis: DocumentAnalysis, profile: Profile) -> RoutePlan:
         fallback.extend([EngineName.GRANITE_PURE, EngineName.MARKER])
     elif kind is DocumentKind.MIXED:
         initial.extend([EngineName.PYMUPDF, EngineName.GRANITE_PURE])
-        fallback.extend([EngineName.GRANITE_HYBRID, EngineName.MARKER])
+        fallback.extend([EngineName.MARKER, EngineName.GRANITE_HYBRID])
         rationale.append("mixed pages retain a native baseline and use visual OCR")
     else:
         initial.append(EngineName.GRANITE_PURE)

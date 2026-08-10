@@ -5,6 +5,8 @@ import platform
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
+from .models import EngineName
+
 
 def _package(name: str, module: str | None = None) -> dict[str, Any]:
     module_name = module or name.replace("-", "_")
@@ -53,3 +55,14 @@ def base_is_ready(capabilities: dict[str, Any]) -> bool:
     return all(
         item["available"] for item in capabilities["base"].values()
     )
+
+
+def available_engine_names(capabilities: dict[str, Any]) -> frozenset[EngineName]:
+    engines: set[EngineName] = set()
+    if base_is_ready(capabilities):
+        engines.add(EngineName.PYMUPDF)
+    if capabilities["optional"]["docling"]["available"]:
+        engines.update({EngineName.GRANITE_HYBRID, EngineName.GRANITE_PURE})
+    if capabilities["optional"]["marker"]["available"]:
+        engines.add(EngineName.MARKER)
+    return frozenset(engines)

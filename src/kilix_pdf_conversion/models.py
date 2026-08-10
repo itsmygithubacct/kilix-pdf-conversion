@@ -37,6 +37,12 @@ class QualityStatus(StrEnum):
     FAIL = "fail"
 
 
+class RecommendationConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 @dataclass(frozen=True)
 class PageSignal:
     page_number: int
@@ -94,6 +100,74 @@ class RoutePlan:
             "initial_engines": [engine.value for engine in self.initial_engines],
             "fallback_engines": [engine.value for engine in self.fallback_engines],
             "rationale": list(self.rationale),
+        }
+
+
+@dataclass(frozen=True)
+class ConversionRecommendation:
+    policy_version: int
+    profile: Profile
+    recommended_engine: EngineName
+    best_available_engine: EngineName | None
+    best_partial_engine: EngineName | None
+    candidate_priority: tuple[EngineName, ...]
+    comparison_engines: tuple[EngineName, ...]
+    fallback_engines: tuple[EngineName, ...]
+    complete_coverage_engines: tuple[EngineName, ...]
+    confidence: RecommendationConfidence
+    available_engines: tuple[EngineName, ...] | None
+    rationale: tuple[str, ...]
+    review_reasons: tuple[str, ...]
+    route: RoutePlan
+
+    def to_dict(self) -> dict[str, Any]:
+        route_engines = tuple(
+            dict.fromkeys(self.route.initial_engines + self.route.fallback_engines)
+        )
+        unavailable = (
+            None
+            if self.available_engines is None
+            else [
+                engine.value
+                for engine in route_engines
+                if engine not in self.available_engines
+            ]
+        )
+        return {
+            "policy_version": self.policy_version,
+            "profile": self.profile.value,
+            "recommended_engine": self.recommended_engine.value,
+            "recommended_engine_available": (
+                None
+                if self.available_engines is None
+                else self.recommended_engine in self.available_engines
+            ),
+            "best_available_engine": (
+                self.best_available_engine.value if self.best_available_engine else None
+            ),
+            "best_partial_engine": (
+                self.best_partial_engine.value if self.best_partial_engine else None
+            ),
+            "candidate_priority": [
+                engine.value for engine in self.candidate_priority
+            ],
+            "comparison_engines": [
+                engine.value for engine in self.comparison_engines
+            ],
+            "fallback_engines": [engine.value for engine in self.fallback_engines],
+            "complete_coverage_engines": [
+                engine.value for engine in self.complete_coverage_engines
+            ],
+            "confidence": self.confidence.value,
+            "available_engines": (
+                None
+                if self.available_engines is None
+                else [engine.value for engine in self.available_engines]
+            ),
+            "unavailable_route_engines": unavailable,
+            "rationale": list(self.rationale),
+            "review_reasons": list(self.review_reasons),
+            "route": self.route.to_dict(),
         }
 
 

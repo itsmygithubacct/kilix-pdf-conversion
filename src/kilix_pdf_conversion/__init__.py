@@ -2,20 +2,26 @@
 
 from .models import (
     Complexity,
+    ConversionRecommendation,
     DocumentAnalysis,
     DocumentKind,
     EngineName,
     Profile,
     QualityStatus,
+    RecommendationConfidence,
 )
+from .recommendation import recommend_conversion
 
 __all__ = [
     "Complexity",
+    "ConversionRecommendation",
     "DocumentAnalysis",
     "DocumentKind",
     "EngineName",
     "Profile",
     "QualityStatus",
+    "RecommendationConfidence",
+    "recommend_conversion",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

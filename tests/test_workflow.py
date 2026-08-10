@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import pytest
 
 from kilix_pdf_conversion.config import AppConfig, ValidationSettings, WorkflowSettings
-from kilix_pdf_conversion.models import EngineName, Profile, QualityStatus
+from kilix_pdf_conversion.models import (
+    DocumentKind,
+    EngineName,
+    Profile,
+    QualityReport,
+    QualityStatus,
+)
 from kilix_pdf_conversion.workflow import Workflow
 
 from .helpers import make_native_pdf
@@ -17,6 +24,32 @@ class StubEngine:
 
     def close(self) -> None:
         self.closed = True
+
+
+def passing_report(engine: EngineName, score: float) -> QualityReport:
+    return QualityReport(
+        engine=engine,
+        status=QualityStatus.PASS,
+        score=score,
+        markdown_bytes=1000,
+        token_count=100,
+        heading_count=1,
+        table_block_count=0,
+        max_markdown_table_columns=0,
+        image_reference_count=0,
+        image_placeholder_count=0,
+        broken_image_reference_count=0,
+        absolute_image_reference_count=0,
+        native_token_recall=1.0,
+        native_token_precision=1.0,
+        expected_table_captions=0,
+        observed_table_captions=0,
+        expected_figure_captions=0,
+        observed_figure_captions=0,
+        repeated_short_line=None,
+        repeated_short_line_count=0,
+        empty_math_block_count=0,
+    )
 
 
 def test_fast_workflow_creates_canonical_bundle(tmp_path) -> None:
@@ -43,6 +76,9 @@ def test_fast_workflow_creates_canonical_bundle(tmp_path) -> None:
     assert (result.run_dir / "manifest.json").is_file()
     assert (result.run_dir / "report.md").is_file()
     assert (result.run_dir / "source.pdf").is_file()
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["recommendation"]["recommended_engine"] == "pymupdf4llm"
+    assert manifest["recommendation_overridden"] is False
 
 
 def test_workflow_reuses_complete_manifest(tmp_path) -> None:
@@ -151,3 +187,37 @@ def test_failed_candidate_is_not_published_as_canonical(tmp_path) -> None:
     assert result.status is QualityStatus.FAIL
     assert result.canonical_engine is None
     assert not (result.run_dir / "canonical.md").exists()
+    assert "No complete-coverage candidate passed" in (
+        result.run_dir / "report.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_complete_coverage_candidate_beats_higher_scoring_partial_candidate() -> None:
+    workflow = Workflow(AppConfig())
+    reports = {
+        EngineName.PYMUPDF: passing_report(EngineName.PYMUPDF, 100.0),
+        EngineName.GRANITE_PURE: passing_report(EngineName.GRANITE_PURE, 90.0),
+    }
+
+    chosen = workflow._choose(
+        reports,
+        DocumentKind.MIXED,
+        (EngineName.GRANITE_PURE, EngineName.MARKER),
+    )
+
+    assert chosen is EngineName.GRANITE_PURE
+
+
+def test_partial_candidate_is_not_canonical_without_complete_coverage() -> None:
+    workflow = Workflow(AppConfig())
+    reports = {
+        EngineName.PYMUPDF: passing_report(EngineName.PYMUPDF, 100.0),
+    }
+
+    chosen = workflow._choose(
+        reports,
+        DocumentKind.MIXED,
+        (EngineName.GRANITE_PURE, EngineName.MARKER),
+    )
+
+    assert chosen is None

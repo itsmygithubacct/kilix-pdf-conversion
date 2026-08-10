@@ -45,6 +45,8 @@ Top-level keys:
 - created_at
 - status
 - source
+- recommendation
+- recommendation_overridden
 - route
 - engine_results
 - quality

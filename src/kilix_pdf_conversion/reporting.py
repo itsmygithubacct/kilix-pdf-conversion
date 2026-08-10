@@ -21,6 +21,8 @@ def write_run_report(
     path: Path,
     analysis: DocumentAnalysis,
     plan: RoutePlan,
+    recommended_engine: EngineName,
+    required_coverage_engines: tuple[EngineName, ...],
     engine_results: dict[EngineName, EngineResult],
     quality_reports: dict[EngineName, QualityReport],
     canonical_engine: EngineName | None,
@@ -35,6 +37,7 @@ def write_run_report(
         f"- Pages: {analysis.page_count}",
         f"- Source SHA-256: {analysis.source_sha256}",
         f"- Profile: {plan.profile.value}",
+        f"- Recommended engine: {recommended_engine.value}",
         f"- Canonical engine: {canonical_engine.value if canonical_engine else 'none'}",
         "",
         "## Route",
@@ -74,6 +77,19 @@ def write_run_report(
         lines.extend(["", f"### {engine.value}", ""])
         lines.extend(f"- Error: {message}" for message in quality.errors)
         lines.extend(f"- Warning: {message}" for message in quality.warnings)
+    if canonical_engine is None and required_coverage_engines:
+        lines.extend(
+            [
+                "",
+                "## Coverage decision",
+                "",
+                "No complete-coverage candidate passed. Partial candidates were retained "
+                "for inspection but were not published as canonical.",
+                "",
+                "Required coverage engines: "
+                + ", ".join(engine.value for engine in required_coverage_engines),
+            ]
+        )
     lines.extend(
         [
             "",

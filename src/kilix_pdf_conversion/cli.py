@@ -8,11 +8,15 @@ from dataclasses import replace
 from pathlib import Path
 
 from .analysis import AnalysisError, analyze_pdf
-from .capabilities import base_is_ready, detect_capabilities
+from .capabilities import (
+    available_engine_names,
+    base_is_ready,
+    detect_capabilities,
+)
 from .config import AppConfig, load_config, with_overrides
 from .models import EngineName, Profile, QualityStatus
 from .quality import validate_markdown
-from .routing import plan_route
+from .recommendation import recommend_conversion
 from .workflow import Workflow
 
 
@@ -113,7 +117,7 @@ def command_inspect(args: argparse.Namespace) -> int:
 def command_plan(args: argparse.Namespace) -> int:
     config = _configured(args)
     analysis = _analysis(args.source, config)
-    plan = plan_route(analysis, config.workflow.profile)
+    plan = recommend_conversion(analysis, config.workflow.profile).route
     if args.json:
         print(
             json.dumps(
@@ -136,6 +140,64 @@ def command_plan(args: argparse.Namespace) -> int:
         )
         for reason in plan.rationale:
             print(f"- {reason}")
+    return 0
+
+
+def command_recommend(args: argparse.Namespace) -> int:
+    config = _configured(args)
+    analysis = _analysis(args.source, config)
+    capabilities = detect_capabilities()
+    recommendation = recommend_conversion(
+        analysis,
+        config.workflow.profile,
+        available_engines=available_engine_names(capabilities),
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "analysis": analysis.to_dict(),
+                    "recommendation": recommendation.to_dict(),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
+    _print_analysis(analysis)
+    print(f"profile: {recommendation.profile.value}")
+    print(f"confidence: {recommendation.confidence.value}")
+    print(f"recommended: {recommendation.recommended_engine.value}")
+    if recommendation.best_available_engine is None:
+        print("best installed with complete coverage: none")
+        if recommendation.best_partial_engine is not None:
+            print(f"partial baseline: {recommendation.best_partial_engine.value}")
+    else:
+        print(
+            "best installed with complete coverage: "
+            f"{recommendation.best_available_engine.value}"
+        )
+    print(
+        "compare: "
+        + (
+            ", ".join(engine.value for engine in recommendation.comparison_engines)
+            if recommendation.comparison_engines
+            else "none"
+        )
+    )
+    print(
+        "fallback: "
+        + (
+            ", ".join(engine.value for engine in recommendation.fallback_engines)
+            if recommendation.fallback_engines
+            else "none"
+        )
+    )
+    for reason in recommendation.rationale:
+        print(f"- {reason}")
+    for reason in recommendation.review_reasons:
+        print(f"- review: {reason}")
     return 0
 
 
@@ -256,6 +318,16 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--json", action="store_true")
     _add_config_argument(inspect_parser)
     inspect_parser.set_defaults(handler=command_inspect)
+
+    recommend = subparsers.add_parser(
+        "recommend",
+        help="recommend the best conversion engine for a PDF",
+    )
+    recommend.add_argument("source", type=Path)
+    recommend.add_argument("--json", action="store_true")
+    _add_config_argument(recommend)
+    _add_profile_argument(recommend)
+    recommend.set_defaults(handler=command_recommend)
 
     plan = subparsers.add_parser("plan", help="show automatic engine routing")
     plan.add_argument("source", type=Path)

@@ -36,6 +36,7 @@ def test_mixed_document_uses_native_and_visual_candidates(tmp_path) -> None:
         EngineName.PYMUPDF,
         EngineName.GRANITE_PURE,
     )
+    assert plan.fallback_engines[0] is EngineName.MARKER
 
 
 def test_scan_uses_pure_vlm_then_marker(tmp_path) -> None:

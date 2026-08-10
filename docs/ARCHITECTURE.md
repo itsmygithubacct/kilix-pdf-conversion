@@ -9,7 +9,7 @@ PDF intake
 content hash + structural analysis
    |
    v
-route by text reliability and layout complexity
+recommend primary, comparison, and fallback engines
    |
    +--> PyMuPDF4LLM native baseline
    +--> Granite hybrid visual structure + backend text
@@ -26,7 +26,8 @@ quality gates and scoring
 canonical selection + report + manifest
 ~~~
 
-The workflow keeps analysis, conversion, validation, and selection separate.
+The workflow keeps analysis, recommendation, conversion, validation, and
+selection separate.
 This makes every decision inspectable and permits new engines without changing
 the artifact contract.
 
@@ -48,9 +49,14 @@ toward caption pages so large books remain practical.
 
 ## Routing
 
-Routing creates an ordered initial engine set and optional fallbacks. Fallbacks
-run only when no initial candidate passes, except where a profile explicitly
-requests a broader comparison.
+The recommendation policy names one preferred engine, comparison candidates,
+complete-coverage engines, and ordered fallbacks. Automatic conversion consumes
+that object directly. For mixed documents, a native-only pass cannot suppress
+the OCR fallback when the preferred visual engine is unavailable.
+
+The CLI also evaluates installed packages. It reports the ideal engine and the
+best suitable installed engine separately, rather than silently downgrading a
+scan to native-only extraction.
 
 Pure-VLM and hybrid are intentionally distinct engine names. They have
 different transcription risks and must never share a cache key.

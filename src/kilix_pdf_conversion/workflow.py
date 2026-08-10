@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .analysis import analyze_pdf
 from .artifacts import canonical_markdown, copy_source, render_visual_pages
+from .capabilities import available_engine_names, detect_capabilities
 from .config import AppConfig
 from .engines import ConversionEngine, EngineUnavailable, create_engine
 from .models import (
@@ -19,8 +20,8 @@ from .models import (
     WorkflowResult,
 )
 from .quality import validate_markdown
+from .recommendation import recommend_conversion
 from .reporting import write_run_report
-from .routing import plan_route
 from .util import (
     append_json_line,
     atomic_write_json,
@@ -40,6 +41,12 @@ class Workflow:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self._engines: dict[EngineName, ConversionEngine] = {}
+        self._available_engines: frozenset[EngineName] | None = None
+
+    def _installed_engines(self) -> frozenset[EngineName]:
+        if self._available_engines is None:
+            self._available_engines = available_engine_names(detect_capabilities())
+        return self._available_engines
 
     def _engine(self, name: EngineName) -> ConversionEngine:
         if name in MODEL_ENGINES:
@@ -61,12 +68,13 @@ class Workflow:
     def __exit__(self, *_args) -> None:
         self.close()
 
-    def _configuration_sha256(self, plan) -> str:
+    def _configuration_sha256(self, plan, policy_version: int) -> str:
         settings = asdict(self.config)
         settings["workflow"].pop("output_root")
         settings["workflow"].pop("force")
         payload = {
             "schema_version": 1,
+            "recommendation_policy_version": policy_version,
             "settings": settings,
             "route": {
                 "profile": plan.profile.value,
@@ -121,6 +129,7 @@ class Workflow:
         self,
         reports: dict[EngineName, QualityReport],
         kind: DocumentKind,
+        required_coverage_engines: tuple[EngineName, ...] = (),
     ) -> EngineName | None:
         eligible = {
             engine: report
@@ -129,6 +138,14 @@ class Workflow:
         }
         if not eligible:
             return None
+        if required_coverage_engines:
+            eligible = {
+                engine: report
+                for engine, report in eligible.items()
+                if engine in required_coverage_engines
+            }
+            if not eligible:
+                return None
         status_rank = {
             QualityStatus.FAIL: 0,
             QualityStatus.WARN: 1,
@@ -156,7 +173,13 @@ class Workflow:
             scan_page_ratio=self.config.analysis.scan_page_ratio,
             max_table_scan_pages=self.config.analysis.max_table_scan_pages,
         )
-        plan = plan_route(analysis, self.config.workflow.profile)
+        recommendation = recommend_conversion(
+            analysis,
+            self.config.workflow.profile,
+            available_engines=self._installed_engines(),
+        )
+        plan = recommendation.route
+        execution_recommended_engine = recommendation.recommended_engine
         if explicit_engines:
             from .models import RoutePlan
 
@@ -166,12 +189,16 @@ class Workflow:
                 fallback_engines=(),
                 rationale=plan.rationale + ("engine list was explicitly selected",),
             )
+            execution_recommended_engine = explicit_engines[0]
 
         run_id = f"{safe_slug(source.stem)}--{analysis.source_sha256[:12]}"
         output_root = self.config.workflow.output_root.expanduser().resolve()
         run_dir = output_root / run_id
         manifest_path = run_dir / "manifest.json"
-        configuration_sha256 = self._configuration_sha256(plan)
+        configuration_sha256 = self._configuration_sha256(
+            plan,
+            recommendation.policy_version,
+        )
         cached = self._cached_result(manifest_path, configuration_sha256)
         if cached is not None:
             return cached
@@ -191,6 +218,16 @@ class Workflow:
                     "timestamp": utc_now(),
                     "document_kind": analysis.document_kind.value,
                     "complexity": analysis.complexity.value,
+                },
+            )
+            append_json_line(
+                events_path,
+                {
+                    "event": "recommendation_complete",
+                    "timestamp": utc_now(),
+                    "recommended_engine": recommendation.recommended_engine.value,
+                    "confidence": recommendation.confidence.value,
+                    "overridden": bool(explicit_engines),
                 },
             )
             atomic_write_json(run_dir / "analysis.json", analysis.to_dict())
@@ -269,20 +306,25 @@ class Workflow:
             for engine_name in plan.initial_engines:
                 run_engine(engine_name)
 
-            if (
-                not explicit_engines
-                and not any(
-                    report.status is QualityStatus.PASS
-                    for report in quality_reports.values()
-                )
-            ):
+            complete_pass = any(
+                quality_reports.get(engine) is not None
+                and quality_reports[engine].status is QualityStatus.PASS
+                for engine in recommendation.complete_coverage_engines
+            )
+            if not explicit_engines and not complete_pass:
                 for engine_name in plan.fallback_engines:
                     run_engine(engine_name)
                     report = quality_reports.get(engine_name)
                     if report and report.status is QualityStatus.PASS:
                         break
 
-            canonical_engine = self._choose(quality_reports, analysis.document_kind)
+            canonical_engine = self._choose(
+                quality_reports,
+                analysis.document_kind,
+                ()
+                if explicit_engines
+                else recommendation.complete_coverage_engines,
+            )
             if canonical_engine is None:
                 status = QualityStatus.FAIL
             else:
@@ -299,6 +341,10 @@ class Workflow:
                 run_dir / "report.md",
                 analysis,
                 plan,
+                execution_recommended_engine,
+                ()
+                if explicit_engines
+                else recommendation.complete_coverage_engines,
                 engine_results,
                 quality_reports,
                 canonical_engine,
@@ -310,6 +356,8 @@ class Workflow:
                 "created_at": utc_now(),
                 "status": status.value,
                 "source": analysis.to_dict(),
+                "recommendation": recommendation.to_dict(),
+                "recommendation_overridden": bool(explicit_engines),
                 "route": plan.to_dict(),
                 "engine_results": {
                     name.value: result.to_dict()

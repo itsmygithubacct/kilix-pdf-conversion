@@ -34,6 +34,7 @@ quality gates. The forensic profile runs every installed engine.
 
 - content-addressed, resumable run directories;
 - PDF text-layer and layout inspection before conversion;
+- first-class engine recommendation API and CLI with installed-engine checks;
 - PyMuPDF4LLM native-text baseline;
 - Granite-Docling pure-VLM and hybrid modes;
 - optional Marker OCR candidate;
@@ -44,7 +45,7 @@ quality gates. The forensic profile runs every installed engine.
 - table-width, caption-completeness, empty-math, and repetition checks;
 - canonical selection with full candidate retention;
 - JSON manifests, JSONL events, and a human-readable report;
-- single-file and reusable batch workflows.
+- single-file and reusable batch workflows;
 - one resident model engine at a time for bounded accelerator memory.
 
 ## Installation
@@ -84,7 +85,14 @@ both model adapters, so **--device cpu** provides a low-memory Marker fallback.
 
 ## Quick start
 
-Inspect and preview the route without loading a model:
+Ask which program is best for a source PDF without loading a model:
+
+~~~sh
+kilix-pdf recommend report.pdf
+kilix-pdf recommend report.pdf --json
+~~~
+
+Inspect the raw signals or preview the complete route:
 
 ~~~sh
 kilix-pdf inspect report.pdf
@@ -131,6 +139,13 @@ Commands accept **--json** for machine-readable output. Use
 | forensic | Runs PyMuPDF4LLM, both Granite modes, and Marker |
 
 Explicit **--engine** options override automatic routing.
+
+The recommendation routine distinguishes the ideal engine, the best installed
+engine with complete page coverage, and any partial baseline. For example, it
+will not claim that native-only extraction is sufficient for a scan merely
+because the OCR engines are absent. Automatic conversion uses this same routine
+and records its decision in the manifest. See
+[engine recommendation](docs/RECOMMENDATION.md).
 
 ## Output
 

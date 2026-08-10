@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-08-10
+
+- Add a first-class source-to-engine recommendation routine and CLI command.
+- Report the ideal engine separately from the best installed engine.
+- Record recommendation confidence, rationale, review flags, and policy version.
+- Make automatic conversion consume the same recommendation object.
+- Require a full-page OCR candidate for mixed documents before skipping fallbacks.
+
 ## 0.1.0 - 2026-08-09
 
 - Add native, mixed, and scan classification.
