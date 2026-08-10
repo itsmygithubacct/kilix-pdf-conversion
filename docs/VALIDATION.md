@@ -8,7 +8,8 @@ The default policy rejects a candidate when:
 - it contains no searchable tokens;
 - one short nonblank line repeats above the configured threshold;
 - an invisible image placeholder remains;
-- a local image reference is missing or uses a nonportable absolute path;
+- an image reference is missing, absolute, external, outside the local
+  `assets/` tree, or resolves through a symlink outside the bundle;
 - native-token recall is below 65 percent for a non-scan PDF.
 
 The repeated-short-line check catches generative decoding loops while ignoring
@@ -52,12 +53,17 @@ correct.
 
 ## Image checks
 
-The application asks engines to write referenced image assets. Invisible
-comment placeholders fail by default because they produce a misleadingly
-complete-looking Markdown file with no viewable figure.
+The application asks engines to write referenced image assets. Every candidate
+reference must use a relative `assets/...` path that remains confined after
+normalization and symlink resolution. Remote URLs are rejected because the run
+bundle must remain self-contained. Invisible comment placeholders fail by
+default because they produce a misleadingly complete-looking Markdown file
+with no viewable figure.
 
 Independent source-page renders provide visual fallback for pages selected by
-image, table, vector-drawing, or multi-column signals.
+image, table, vector-drawing, or multi-column signals. The analyzer retains a
+signal for every page; when the render cap is reached, selections are spread
+across the document rather than truncated to the first pages.
 
 ## Selection limits
 

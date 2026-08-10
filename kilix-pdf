@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+app_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+runtime_python="$app_root/.runtime/bin/python"
+export PYMUPDF_SUGGEST_LAYOUT_ANALYZER=0
+
+if [[ ! -x "$runtime_python" ]]; then
+    printf 'Kilix PDF Conversion runtime is missing. Run: make -C %q runtime\n' "$app_root" >&2
+    exit 1
+fi
+
+export PYTHONPATH="$app_root/src"
+
+exec "$runtime_python" -P -m kilix_pdf_conversion "$@"

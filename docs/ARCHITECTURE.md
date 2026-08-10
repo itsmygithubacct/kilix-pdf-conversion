@@ -35,7 +35,7 @@ the artifact contract.
 
 The analyzer records:
 
-- source SHA-256, size, and page count;
+- stable source SHA-256, size, and page count, with mutation detection;
 - native characters and reliable-text page ratio;
 - invalid/replacement character ratio;
 - images and sampled vector drawings;
@@ -98,10 +98,15 @@ duplicate content.
 
 - Run identity is source slug plus a SHA-256 prefix.
 - A per-run exclusive lock prevents concurrent writers.
+- The advisory lock is released by the kernel after normal exit or a crash; its
+  diagnostic file does not need to be deleted.
 - Text and JSON files are written through a temporary file and atomically
   renamed.
 - The manifest is written only after selection and reporting.
-- A complete manifest is reused unless **--force** is supplied.
+- A complete manifest is reused only after its schema, source, configuration,
+  canonical path, and canonical digest are verified.
+- Interrupted and forced runs are atomically archived under `.history` before
+  a fresh run directory is created.
 - Candidate failures remain in the manifest and do not erase successful peers.
 
 ## Extension points

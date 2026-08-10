@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import re
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 from .config import ValidationSettings
@@ -86,10 +86,17 @@ def repeated_short_line(markdown: str) -> tuple[str | None, int]:
     return value, count
 
 
-def image_reference_metrics(markdown: str, markdown_path: Path) -> tuple[int, int, int]:
+def image_reference_metrics(
+    markdown: str,
+    markdown_path: Path,
+) -> tuple[int, int, int, int, int]:
     references = [*IMAGE_LINK.findall(markdown), *HTML_IMAGE.findall(markdown)]
     broken = 0
     absolute = 0
+    external = 0
+    escaping = 0
+    markdown_dir = markdown_path.parent.resolve()
+    asset_root = markdown_dir / "assets"
     for reference in references:
         destination = reference.strip()
         if destination.startswith("<") and destination.endswith(">"):
@@ -97,15 +104,37 @@ def image_reference_metrics(markdown: str, markdown_path: Path) -> tuple[int, in
         else:
             destination = destination.split(maxsplit=1)[0]
         parsed = urlsplit(destination)
-        if parsed.scheme in {"http", "https", "data"}:
+        if parsed.netloc or (parsed.scheme and parsed.scheme != "file"):
+            external += 1
             continue
-        if parsed.scheme == "file" or Path(unquote(parsed.path)).is_absolute():
+        decoded_path = unquote(parsed.path)
+        if parsed.scheme == "file" or Path(decoded_path).is_absolute():
             absolute += 1
             continue
-        target = markdown_path.parent / unquote(parsed.path)
-        if not target.is_file():
+        if not decoded_path or "\x00" in decoded_path or "\\" in decoded_path:
+            escaping += 1
+            continue
+        relative = PurePosixPath(decoded_path)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or not relative.parts
+            or relative.parts[0] != "assets"
+        ):
+            escaping += 1
+            continue
+        candidate = markdown_dir.joinpath(*relative.parts)
+        try:
+            target = candidate.resolve(strict=False)
+            target.relative_to(asset_root)
+        except (OSError, ValueError):
+            escaping += 1
+            continue
+        if candidate.is_symlink():
+            escaping += 1
+        elif not target.is_file():
             broken += 1
-    return len(references), broken, absolute
+    return len(references), broken, absolute, external, escaping
 
 
 def validate_markdown(
@@ -124,9 +153,13 @@ def validate_markdown(
     table_numbers = {int(value) for value in TABLE_CAPTION_LINE.findall(markdown)}
     figure_numbers = {int(value) for value in FIGURE_CAPTION_LINE.findall(markdown)}
     placeholder_count = markdown.count("<!-- image -->")
-    image_references, broken_images, absolute_images = image_reference_metrics(
-        markdown, markdown_path
-    )
+    (
+        image_references,
+        broken_images,
+        absolute_images,
+        external_images,
+        escaping_images,
+    ) = image_reference_metrics(markdown, markdown_path)
     repeated_line, repeated_count = repeated_short_line(markdown)
     empty_math_count = len(EMPTY_MATH.findall(markdown))
     heading_count = len(re.findall(r"(?m)^#{1,6}\s+", markdown))
@@ -164,6 +197,12 @@ def validate_markdown(
         errors.append(f"output references {broken_images} missing local image assets")
     if absolute_images:
         errors.append(f"output contains {absolute_images} nonportable absolute image paths")
+    if external_images:
+        errors.append(f"output contains {external_images} external image references")
+    if escaping_images:
+        errors.append(
+            f"output contains {escaping_images} image paths outside the assets bundle"
+        )
     if empty_math_count:
         warnings.append(f"output contains {empty_math_count} empty display-math blocks")
     if native_recall is not None:
@@ -223,6 +262,8 @@ def validate_markdown(
         image_placeholder_count=placeholder_count,
         broken_image_reference_count=broken_images,
         absolute_image_reference_count=absolute_images,
+        external_image_reference_count=external_images,
+        escaping_image_reference_count=escaping_images,
         native_token_recall=(
             round(native_recall, 6) if native_recall is not None else None
         ),

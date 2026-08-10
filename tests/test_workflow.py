@@ -40,6 +40,8 @@ def passing_report(engine: EngineName, score: float) -> QualityReport:
         image_placeholder_count=0,
         broken_image_reference_count=0,
         absolute_image_reference_count=0,
+        external_image_reference_count=0,
+        escaping_image_reference_count=0,
         native_token_recall=1.0,
         native_token_precision=1.0,
         expected_table_captions=0,
@@ -129,6 +131,54 @@ def test_force_replaces_the_complete_run_directory(tmp_path) -> None:
     assert second.run_dir == first.run_dir
     assert not stale.exists()
     assert second.manifest_path.is_file()
+    archived = list((output_root / ".history").iterdir())
+    assert len(archived) == 1
+    assert (archived[0] / "stale-candidate.txt").read_text(encoding="utf-8") == "old"
+
+
+def test_incomplete_run_is_archived_before_retry(tmp_path) -> None:
+    source = make_native_pdf(tmp_path / "source.pdf")
+    output_root = tmp_path / "runs"
+    config = AppConfig(
+        workflow=WorkflowSettings(
+            profile=Profile.FAST,
+            output_root=output_root,
+            render_visual_pages=False,
+        ),
+        validation=ValidationSettings(minimum_markdown_bytes=20),
+    )
+    with Workflow(config) as workflow:
+        first = workflow.convert(source)
+    first.manifest_path.unlink()
+    stale = first.run_dir / "stale-candidate.txt"
+    stale.write_text("partial", encoding="utf-8")
+
+    with Workflow(config) as workflow:
+        retried = workflow.convert(source)
+
+    assert retried.manifest_path.is_file()
+    archives = list((output_root / ".history").iterdir())
+    assert len(archives) == 1
+    assert (archives[0] / "stale-candidate.txt").read_text(encoding="utf-8") == "partial"
+
+
+def test_cache_rejects_corrupt_canonical_output(tmp_path) -> None:
+    source = make_native_pdf(tmp_path / "source.pdf")
+    config = AppConfig(
+        workflow=WorkflowSettings(
+            profile=Profile.FAST,
+            output_root=tmp_path / "runs",
+            render_visual_pages=False,
+        ),
+        validation=ValidationSettings(minimum_markdown_bytes=20),
+    )
+    with Workflow(config) as workflow:
+        first = workflow.convert(source)
+    (first.run_dir / "canonical.md").write_text("tampered\n", encoding="utf-8")
+
+    with Workflow(config) as workflow:
+        with pytest.raises(RuntimeError, match="missing or corrupt"):
+            workflow.convert(source)
 
 
 def test_cache_rejects_changed_conversion_settings(tmp_path) -> None:

@@ -61,7 +61,34 @@ def test_image_reference_metrics_checks_local_assets(tmp_path) -> None:
         "![remote](https://example.test/chart.png)\n"
     )
 
-    assert image_reference_metrics(markdown, tmp_path / "document.md") == (4, 1, 1)
+    assert image_reference_metrics(markdown, tmp_path / "document.md") == (
+        4,
+        1,
+        1,
+        1,
+        0,
+    )
+
+
+def test_image_reference_metrics_rejects_paths_outside_assets(tmp_path) -> None:
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"png")
+    (assets / "linked.png").symlink_to(outside)
+    markdown = (
+        "![parent](../outside.png)\n"
+        "![wrong-root](images/outside.png)\n"
+        "![symlink](assets/linked.png)\n"
+    )
+
+    assert image_reference_metrics(markdown, tmp_path / "document.md") == (
+        3,
+        0,
+        0,
+        0,
+        3,
+    )
 
 
 def test_validation_rejects_repetition_and_placeholders(tmp_path) -> None:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-import shutil
-from dataclasses import asdict
+from contextlib import ExitStack
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from .analysis import analyze_pdf
 from .artifacts import canonical_markdown, copy_source, render_visual_pages
@@ -27,6 +29,7 @@ from .util import (
     atomic_write_json,
     exclusive_lock,
     safe_slug,
+    sha256_file,
     utc_now,
 )
 
@@ -35,6 +38,7 @@ MODEL_ENGINES = {
     EngineName.GRANITE_PURE,
     EngineName.MARKER,
 }
+MANIFEST_SCHEMA_VERSION = 2
 
 
 class Workflow:
@@ -89,23 +93,121 @@ class Workflow:
         self,
         manifest_path: Path,
         configuration_sha256: str,
+        source_sha256: str,
     ) -> WorkflowResult | None:
-        if self.config.workflow.force or not manifest_path.is_file():
+        if self.config.workflow.force:
             return None
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not manifest_path.exists() and not manifest_path.is_symlink():
+            return None
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise RuntimeError(
+                "completed run has an unsafe manifest; use --force to archive it"
+            )
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                "completed run has an unreadable manifest; use --force to archive it"
+            ) from error
+        if not isinstance(manifest, dict) or manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+            raise RuntimeError(
+                "completed run has an unsupported manifest; use --force to archive it"
+            )
         if manifest.get("configuration_sha256") != configuration_sha256:
             raise RuntimeError(
                 "completed run uses different conversion settings; use --force "
                 "or choose another output root"
             )
-        canonical = manifest.get("canonical_engine")
-        status = QualityStatus(manifest.get("status", QualityStatus.FAIL.value))
+        source = manifest.get("source")
+        if not isinstance(source, dict) or source.get("source_sha256") != source_sha256:
+            raise RuntimeError(
+                "completed run does not match the source PDF; use --force to archive it"
+            )
+        try:
+            status = QualityStatus(manifest["status"])
+            canonical_value = manifest.get("canonical_engine")
+            canonical = EngineName(canonical_value) if canonical_value else None
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(
+                "completed run has invalid result metadata; use --force to archive it"
+            ) from error
+        canonical_path = manifest.get("canonical_path")
+        canonical_sha256 = manifest.get("canonical_sha256")
+        if canonical is None:
+            if (
+                status is not QualityStatus.FAIL
+                or canonical_path is not None
+                or canonical_sha256 is not None
+            ):
+                raise RuntimeError(
+                    "completed run has inconsistent canonical metadata; use --force"
+                )
+        else:
+            candidate = manifest_path.parent / "canonical.md"
+            if (
+                status is QualityStatus.FAIL
+                or canonical_path != "canonical.md"
+                or not isinstance(canonical_sha256, str)
+                or len(canonical_sha256) != 64
+                or candidate.is_symlink()
+                or not candidate.is_file()
+                or sha256_file(candidate) != canonical_sha256
+            ):
+                raise RuntimeError(
+                    "completed run canonical output is missing or corrupt; use --force"
+                )
         return WorkflowResult(
             run_dir=manifest_path.parent,
-            canonical_engine=EngineName(canonical) if canonical else None,
+            canonical_engine=canonical,
             status=status,
             manifest_path=manifest_path,
         )
+
+    @staticmethod
+    def _archive_run(run_dir: Path, output_root: Path) -> Path:
+        if run_dir.is_symlink() or not run_dir.is_dir():
+            raise RuntimeError(f"refusing to archive invalid run path: {run_dir}")
+        history_dir = output_root / ".history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        if history_dir.is_symlink() or not history_dir.is_dir():
+            raise RuntimeError(f"refusing to use invalid history path: {history_dir}")
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        archived = history_dir / f"{run_dir.name}--{timestamp}"
+        if archived.exists() or archived.is_symlink():
+            raise RuntimeError(f"refusing to overwrite archived run: {archived}")
+        run_dir.replace(archived)
+        return archived
+
+    @staticmethod
+    def _validated_engine_paths(
+        result: EngineResult,
+        output_dir: Path,
+    ) -> Path:
+        if not result.markdown_path:
+            raise RuntimeError("engine reported success without a Markdown path")
+        root = output_dir.resolve()
+        markdown_path = Path(result.markdown_path)
+        if not markdown_path.is_absolute() or markdown_path.is_symlink():
+            raise RuntimeError("engine returned an unsafe Markdown path")
+        resolved_markdown = markdown_path.resolve()
+        try:
+            resolved_markdown.relative_to(root)
+        except ValueError as error:
+            raise RuntimeError("engine Markdown path escapes its output directory") from error
+        if not resolved_markdown.is_file():
+            raise RuntimeError("engine Markdown output does not exist")
+        if result.assets_path:
+            assets_path = Path(result.assets_path)
+            if not assets_path.is_absolute() or assets_path.is_symlink():
+                raise RuntimeError("engine returned an unsafe assets path")
+            resolved_assets = assets_path.resolve()
+            try:
+                resolved_assets.relative_to(root)
+            except ValueError as error:
+                raise RuntimeError("engine assets path escapes its output directory") from error
+            if not resolved_assets.is_dir():
+                raise RuntimeError("engine assets output does not exist")
+        return resolved_markdown
 
     @staticmethod
     def _selection_bonus(engine: EngineName, kind: DocumentKind) -> float:
@@ -199,18 +301,31 @@ class Workflow:
             plan,
             recommendation.policy_version,
         )
-        cached = self._cached_result(manifest_path, configuration_sha256)
-        if cached is not None:
-            return cached
 
         lock_path = output_root / ".locks" / f"{run_id}.lock"
-        with exclusive_lock(lock_path):
-            if self.config.workflow.force and run_dir.exists():
-                if run_dir.is_symlink() or not run_dir.is_dir():
-                    raise RuntimeError(f"refusing to replace invalid run path: {run_dir}")
-                shutil.rmtree(run_dir)
+        with exclusive_lock(lock_path), ExitStack() as cleanup:
+            cached = self._cached_result(
+                manifest_path,
+                configuration_sha256,
+                analysis.source_sha256,
+            )
+            if cached is not None:
+                return cached
+
+            archived_run = None
+            if run_dir.exists() or run_dir.is_symlink():
+                archived_run = self._archive_run(run_dir, output_root)
             run_dir.mkdir(parents=True, exist_ok=True)
             events_path = run_dir / "events.jsonl"
+            if archived_run is not None:
+                append_json_line(
+                    events_path,
+                    {
+                        "event": "previous_run_archived",
+                        "timestamp": utc_now(),
+                        "archive": str(archived_run),
+                    },
+                )
             append_json_line(
                 events_path,
                 {
@@ -232,10 +347,20 @@ class Workflow:
             )
             atomic_write_json(run_dir / "analysis.json", analysis.to_dict())
             if self.config.workflow.copy_source:
-                copy_source(source, run_dir / "source.pdf")
+                conversion_source = run_dir / "source.pdf"
+            else:
+                temporary_directory = cleanup.enter_context(
+                    TemporaryDirectory(prefix="kilix-pdf-input-")
+                )
+                conversion_source = Path(temporary_directory) / "source.pdf"
+            copy_source(
+                source,
+                conversion_source,
+                expected_sha256=analysis.source_sha256,
+            )
             if self.config.workflow.render_visual_pages:
                 rendered = render_visual_pages(
-                    source,
+                    conversion_source,
                     analysis,
                     run_dir / "visual",
                 )
@@ -250,16 +375,16 @@ class Workflow:
 
             engine_results: dict[EngineName, EngineResult] = {}
             quality_reports: dict[EngineName, QualityReport] = {}
+            validated_markdown_paths: dict[EngineName, Path] = {}
 
             def run_engine(name: EngineName) -> None:
                 append_json_line(
                     events_path,
                     {"event": "engine_started", "timestamp": utc_now(), "engine": name.value},
                 )
+                output_dir = run_dir / "conversions" / name.value
                 try:
-                    result = self._engine(name).convert(
-                        source, run_dir / "conversions" / name.value
-                    )
+                    result = self._engine(name).convert(conversion_source, output_dir)
                 except EngineUnavailable as error:
                     result = EngineResult(
                         engine=name,
@@ -270,6 +395,38 @@ class Workflow:
                         output_bytes=0,
                         error=str(error),
                     )
+                except Exception as error:
+                    result = EngineResult(
+                        engine=name,
+                        status="failed",
+                        markdown_path=None,
+                        assets_path=None,
+                        elapsed_seconds=0.0,
+                        output_bytes=0,
+                        error=f"{type(error).__name__}: {error}",
+                    )
+
+                quality = None
+                if result.status == "success":
+                    try:
+                        markdown_path = self._validated_engine_paths(result, output_dir)
+                        quality = validate_markdown(
+                            conversion_source,
+                            markdown_path,
+                            name,
+                            analysis,
+                            self.config.validation,
+                        )
+                    except Exception as error:
+                        result = replace(
+                            result,
+                            status="failed",
+                            markdown_path=None,
+                            assets_path=None,
+                            error=f"validation failed: {type(error).__name__}: {error}",
+                        )
+                    else:
+                        validated_markdown_paths[name] = markdown_path
                 engine_results[name] = result
                 append_json_line(
                     events_path,
@@ -279,14 +436,7 @@ class Workflow:
                         **result.to_dict(),
                     },
                 )
-                if result.status == "success" and result.markdown_path:
-                    quality = validate_markdown(
-                        source,
-                        Path(result.markdown_path),
-                        name,
-                        analysis,
-                        self.config.validation,
-                    )
+                if quality is not None:
                     quality_reports[name] = quality
                     atomic_write_json(
                         run_dir / "quality" / f"{name.value}.json",
@@ -329,13 +479,14 @@ class Workflow:
                 status = QualityStatus.FAIL
             else:
                 status = quality_reports[canonical_engine].status
-                selected_result = engine_results[canonical_engine]
-                if selected_result.markdown_path:
-                    canonical_markdown(
-                        Path(selected_result.markdown_path),
-                        canonical_engine,
-                        run_dir / "canonical.md",
-                    )
+                canonical_markdown(
+                    validated_markdown_paths[canonical_engine],
+                    canonical_engine,
+                    run_dir / "canonical.md",
+                )
+
+            if sha256_file(conversion_source) != analysis.source_sha256:
+                raise RuntimeError("staged source PDF changed during conversion")
 
             write_run_report(
                 run_dir / "report.md",
@@ -351,7 +502,7 @@ class Workflow:
                 status,
             )
             manifest = {
-                "schema_version": 1,
+                "schema_version": MANIFEST_SCHEMA_VERSION,
                 "configuration_sha256": configuration_sha256,
                 "created_at": utc_now(),
                 "status": status.value,
@@ -371,6 +522,9 @@ class Workflow:
                     canonical_engine.value if canonical_engine is not None else None
                 ),
                 "canonical_path": "canonical.md" if canonical_engine else None,
+                "canonical_sha256": (
+                    sha256_file(run_dir / "canonical.md") if canonical_engine else None
+                ),
             }
             atomic_write_json(manifest_path, manifest)
             append_json_line(

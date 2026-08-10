@@ -1,0 +1,48 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Select Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install test and build tools
+        run: python -m pip install '.[dev]'
+
+      - name: Verify source and package
+        run: |
+          bash -n kilix-pdf
+          make PYTHON=python verify
+          make PYTHON=python build
+          git diff --check "$(git hash-object -t tree /dev/null)" HEAD -- .
+
+      - name: Verify the no-uv runtime path
+        if: matrix.python-version == '3.11'
+        run: |
+          make PYTHON=python runtime
+          make runtime-check

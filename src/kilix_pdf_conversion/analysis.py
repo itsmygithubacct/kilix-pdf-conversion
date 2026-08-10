@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+import stat
 import statistics
 from pathlib import Path
 
@@ -67,6 +68,26 @@ def analyze_pdf(
     if source.suffix.casefold() != ".pdf":
         raise AnalysisError(f"input is not a PDF: {source}")
 
+    initial_stat = source.stat()
+    if not stat.S_ISREG(initial_stat.st_mode):
+        raise AnalysisError(f"PDF is not a regular file: {source}")
+    source_sha256 = sha256_file(source)
+    hashed_stat = source.stat()
+    initial_identity = (
+        initial_stat.st_dev,
+        initial_stat.st_ino,
+        initial_stat.st_size,
+        initial_stat.st_mtime_ns,
+    )
+    hashed_identity = (
+        hashed_stat.st_dev,
+        hashed_stat.st_ino,
+        hashed_stat.st_size,
+        hashed_stat.st_mtime_ns,
+    )
+    if initial_identity != hashed_identity:
+        raise AnalysisError("PDF changed while its content hash was being computed")
+
     try:
         document = pymupdf.open(source)
     except Exception as error:
@@ -82,7 +103,6 @@ def analyze_pdf(
         sampled_pages = evenly_spaced_pages(page_count)
         sampled_set = set(sampled_pages)
         page_texts: list[str] = []
-        page_blocks: list[list[tuple]] = []
         page_images: list[int] = []
         multi_column_pages: set[int] = set()
         table_caption_numbers: set[int] = set()
@@ -94,7 +114,6 @@ def analyze_pdf(
             text = page.get_text("text", sort=True)
             blocks = page.get_text("blocks", sort=True)
             page_texts.append(text)
-            page_blocks.append(blocks)
             native_characters += len(text)
             replacement_characters += text.count("\ufffd") + text.count("\x00")
             table_caption_numbers.update(int(value) for value in TABLE_REFERENCE.findall(text))
@@ -153,8 +172,7 @@ def analyze_pdf(
             max_table_columns[index] = max(widths, default=0)
 
         page_signals: list[PageSignal] = []
-        signal_pages = sorted(set(table_scan_pages) | sampled_set)
-        for index in signal_pages:
+        for index in range(page_count):
             text = page_texts[index]
             page_signals.append(
                 PageSignal(
@@ -199,10 +217,21 @@ def analyze_pdf(
         ):
             warnings.append("table scan was capped before every caption page was inspected")
 
+        final_sha256 = sha256_file(source)
+        final_stat = source.stat()
+        final_identity = (
+            final_stat.st_dev,
+            final_stat.st_ino,
+            final_stat.st_size,
+            final_stat.st_mtime_ns,
+        )
+        if final_identity != initial_identity or final_sha256 != source_sha256:
+            raise AnalysisError("PDF changed while it was being analyzed")
+
         return DocumentAnalysis(
             source=str(source),
-            source_sha256=sha256_file(source),
-            source_bytes=source.stat().st_size,
+            source_sha256=source_sha256,
+            source_bytes=initial_stat.st_size,
             page_count=page_count,
             native_text_characters=native_characters,
             reliable_text_page_ratio=round(reliable_ratio, 6),

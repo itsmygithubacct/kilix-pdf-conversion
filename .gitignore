@@ -9,7 +9,8 @@ build/
 dist/
 .venv/
 .venv-*/
+.runtime/
+uv.lock
 output/
 runs/
 *.part
-*.lock

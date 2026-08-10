@@ -33,6 +33,7 @@ quality gates. The forensic profile runs every installed engine.
 ## Features
 
 - content-addressed, resumable run directories;
+- crash-safe per-run locks and archived recovery of interrupted runs;
 - PDF text-layer and layout inspection before conversion;
 - first-class engine recommendation API and CLI with installed-engine checks;
 - PyMuPDF4LLM native-text baseline;
@@ -40,7 +41,7 @@ quality gates. The forensic profile runs every installed engine.
 - optional Marker OCR candidate;
 - referenced image assets instead of invisible placeholders;
 - independent visual page renders for difficult pages;
-- atomic Markdown and manifest writes;
+- atomic source staging, Markdown, asset, and manifest writes;
 - native-token recall/precision diagnostics;
 - table-width, caption-completeness, empty-math, and repetition checks;
 - canonical selection with full candidate retention;
@@ -50,14 +51,29 @@ quality gates. The forensic profile runs every installed engine.
 
 ## Installation
 
-Python 3.12 or newer is required.
+Python 3.11 or newer is required. On Debian/Plebian OS, install `python3-venv`.
+
+### Plebian OS and Kilix runtime
+
+The 0.1.9 runtime does not require `uv`. It uses the standard-library `venv`
+module and installs an exact Linux x86-64 dependency closure whose artifacts
+are SHA-256 verified by pip:
+
+~~~sh
+make runtime
+./kilix-pdf doctor
+./kilix-pdf
+~~~
+
+The no-argument launcher starts a guided terminal session. `uv` is used by
+maintainers to regenerate the tracked lock, but it is not part of the installed
+application or its launch path.
 
 ### Base and development tools
 
 ~~~sh
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e '.[dev]'
-.venv/bin/kilix-pdf doctor
+uv sync --python 3.11 --extra dev
+uv run kilix-pdf doctor
 ~~~
 
 ### Granite-Docling
@@ -78,12 +94,20 @@ PyTorch compatibility matrix. An 8 GiB GPU should start with a one-page batch.
 uv pip install --python .venv/bin/python -e '.[marker]'
 ~~~
 
-Marker and Granite have large model/runtime dependencies. Separate virtual
-environments are reasonable in production; the CLI can be invoked with the
-interpreter that owns the desired engine. The **--device** override applies to
-both model adapters, so **--device cpu** provides a low-memory Marker fallback.
+Marker and Granite have large, mutually incompatible model/runtime dependency
+closures and must use separate virtual environments. Neither is installed by
+the 0.1.9 base runtime. The CLI can be invoked with the interpreter that owns
+the desired engine. The **--device** override applies to both model adapters,
+so **--device cpu** provides a low-memory Marker fallback. Review the model and
+code licenses in [the third-party notices](THIRD-PARTY-NOTICES.md) first.
 
 ## Quick start
+
+Start the guided terminal interface:
+
+~~~sh
+kilix-pdf
+~~~
 
 Ask which program is best for a source PDF without loading a model:
 
@@ -175,9 +199,11 @@ output/
         └── page-0001.jpg
 ~~~
 
-The manifest fingerprints the effective route and settings. A completed run is
-reused only when that fingerprint matches; use **--force** to replace the exact
-run directory after changing conversion or validation settings.
+The manifest fingerprints the effective route and settings plus the canonical
+file. A completed run is reused only when its source, configuration, schema,
+and canonical SHA-256 all match. Interrupted and forced runs are atomically
+moved under **output/.history/** before a clean run begins, so stale candidate
+assets cannot leak into a retry and prior evidence is not destroyed.
 
 **canonical.md** is a copied, link-adjusted candidate. It is not a synthetic
 merge. This avoids creating untraceable text by combining disagreeing engines.
@@ -187,9 +213,10 @@ See [the output contract](docs/OUTPUT_CONTRACT.md) for details.
 
 A candidate fails by default when it is empty or tiny, contains a runaway
 short-line repetition, has critically low recall against a trustworthy native
-text layer, or still contains invisible image placeholders. Missing captions,
-collapsed table widths, weaker-but-noncritical recall, and empty display math
-produce warnings and lower the score.
+text layer, still contains invisible image placeholders, or references an
+image outside its local `assets/` bundle. Missing captions, collapsed table
+widths, weaker-but-noncritical recall, and empty display math produce warnings
+and lower the score.
 
 Validation is deliberately conservative. Passing means “suitable as the best
 available candidate under these checks,” not “identical to the PDF.” The source
@@ -212,4 +239,6 @@ separate from the fast unit suite.
 
 ## License
 
-MIT
+Copyright (C) 2026 itsmygithubacct. Kilix PDF Conversion is licensed under
+AGPL-3.0-only and comes with no warranty. See [LICENSE](LICENSE) and
+[third-party notices](THIRD-PARTY-NOTICES.md).

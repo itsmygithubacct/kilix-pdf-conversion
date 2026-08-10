@@ -10,7 +10,8 @@ A run directory is named:
 
 Changing source bytes creates a new run. The manifest records a digest of the
 effective settings and route. Reusing the same output root with different
-settings is rejected unless **--force** replaces the complete run directory.
+settings is rejected unless **--force** archives the complete run and starts a
+clean replacement.
 
 ## Required files
 
@@ -36,7 +37,7 @@ quality/<engine>.json
 Candidate Markdown links are relative to their candidate directory. Links in
 **canonical.md** are rewritten to include the candidate path.
 
-## Manifest schema version 1
+## Manifest schema version 2
 
 Top-level keys:
 
@@ -52,10 +53,23 @@ Top-level keys:
 - quality
 - canonical_engine
 - canonical_path
+- canonical_sha256
 
 Paths inside engine results are operational metadata and may be absolute.
 Consumers should use canonical_path and the documented directory structure
 when moving a completed run.
+
+Before a cached result is returned, the implementation verifies the manifest
+schema, source and configuration digests, canonical path, file type, and
+canonical SHA-256. A missing, symlinked, or modified canonical file invalidates
+the cache.
+
+## Recovery history
+
+An interrupted run has no final manifest and is never resumed in place. It is
+moved atomically to `.history/<run-id>--<timestamp>` before retry. `--force`
+uses the same archival path for a completed run. This preserves diagnostics
+while ensuring old events and assets cannot appear in the new result.
 
 ## Status
 

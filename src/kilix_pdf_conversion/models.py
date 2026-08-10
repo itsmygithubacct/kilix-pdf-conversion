@@ -203,6 +203,8 @@ class QualityReport:
     image_placeholder_count: int
     broken_image_reference_count: int
     absolute_image_reference_count: int
+    external_image_reference_count: int
+    escaping_image_reference_count: int
     native_token_recall: float | None
     native_token_precision: float | None
     expected_table_captions: int

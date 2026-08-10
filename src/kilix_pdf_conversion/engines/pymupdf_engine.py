@@ -33,6 +33,9 @@ class PyMuPDFEngine(ConversionEngine):
 
     def convert(self, source: Path, output_dir: Path) -> EngineResult:
         try:
+            import pymupdf
+
+            pymupdf.no_recommend_layout()
             import pymupdf4llm
         except ImportError as error:
             raise EngineUnavailable(
@@ -51,11 +54,14 @@ class PyMuPDFEngine(ConversionEngine):
                     str(source),
                     dpi=self.settings.dpi,
                     filename=source.stem,
-                    footer=self.settings.include_footers,
-                    header=self.settings.include_headers,
                     image_path="assets",
+                    margins=(
+                        0,
+                        0 if self.settings.include_headers else 36,
+                        0,
+                        0 if self.settings.include_footers else 36,
+                    ),
                     show_progress=False,
-                    use_ocr=False,
                     force_text=True,
                     write_images=self.settings.write_images,
                 )

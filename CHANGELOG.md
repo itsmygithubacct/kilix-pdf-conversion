@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0 - 2026-08-10
+
+- Support the Python 3.11 baseline shipped by Plebian OS.
+- Add a standard `venv` runtime installer with an exact hash-verified base lock;
+  `uv` is no longer required on release images.
+- Pin the last AGPL-only PyMuPDF4LLM base closure and exclude the noncommercial
+  PyMuPDF Layout dependency from the public runtime.
+- Relicense the application under AGPL-3.0-only and document third-party code
+  and model terms.
+- Add a guided no-argument terminal interface and repository launcher.
+- Replace stale-prone lock files with kernel-released advisory locks.
+- Archive interrupted and forced runs before clean retries instead of reusing
+  or deleting their directories.
+- Verify source staging, engine output confinement, cached manifest schema, and
+  canonical output SHA-256.
+- Reject external, absolute, escaping, symlinked, missing, and non-asset image
+  references.
+- Keep page signals for the full document and spread capped visual renders
+  across all relevant pages.
+- Validate configuration types, ranges, keys, and mutually exclusive model
+  dependency sets.
+- Add Python 3.11 through 3.13 CI, build verification, and expanded regression
+  tests.
+
 ## 0.2.0 - 2026-08-10
 
 - Add a first-class source-to-engine recommendation routine and CLI command.

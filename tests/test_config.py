@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from kilix_pdf_conversion.config import load_config, with_overrides
 from kilix_pdf_conversion.models import Profile
 
@@ -30,3 +32,22 @@ device = "cuda"
     assert overridden.workflow.profile is Profile.FAST
     assert overridden.granite.device == "cpu"
     assert overridden.marker.device == "cpu"
+
+
+@pytest.mark.parametrize(
+    "content, message",
+    [
+        ("[workflow]\ncopy_source = 1\n", "must be true or false"),
+        ("[pymupdf]\ndpi = 12\n", "at least 36"),
+        ("[analysis]\nscan_page_ratio = 0.9\n", "must be below"),
+        ("[marker]\ndevice = 7\n", "must be auto, cpu, or cuda"),
+        ("[workflow]\nunknown = true\n", "unknown option"),
+        ("[mystery]\nvalue = true\n", "unknown configuration section"),
+    ],
+)
+def test_invalid_configuration_is_rejected(tmp_path, content, message) -> None:
+    path = tmp_path / "invalid.toml"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_config(path)

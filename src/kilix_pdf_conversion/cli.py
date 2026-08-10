@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from . import __version__
 from .analysis import AnalysisError, analyze_pdf
 from .capabilities import (
     available_engine_names,
@@ -302,12 +303,83 @@ def command_validate(args: argparse.Namespace) -> int:
     return 1 if report.status is QualityStatus.FAIL else 0
 
 
+def command_interactive(args: argparse.Namespace) -> int:
+    config = _configured(args)
+    if args.config is None and args.output_root is None:
+        config = replace(
+            config,
+            workflow=replace(
+                config.workflow,
+                output_root=Path.home() / "Documents" / "Kilix PDF Conversions",
+            ),
+        )
+    print(f"Kilix PDF Conversion {__version__}")
+    print("Copyright (C) 2026 itsmygithubacct")
+    print("AGPL-3.0-only; NO WARRANTY.")
+    print("License and source: https://github.com/itsmygithubacct/kilix-pdf-conversion")
+    print("Validated PDF-to-Markdown conversion. Press Enter at the path prompt to quit.")
+    print(f"Output root: {config.workflow.output_root}")
+    while True:
+        try:
+            value = input("\nPDF path: ").strip()
+        except EOFError:
+            print()
+            return 0
+        if not value:
+            return 0
+        source = Path(value.strip("'\"")).expanduser().resolve()
+        try:
+            analysis = _analysis(source, config)
+            recommendation = recommend_conversion(
+                analysis,
+                config.workflow.profile,
+                available_engines=available_engine_names(detect_capabilities()),
+            )
+        except (AnalysisError, OSError, ValueError, RuntimeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            continue
+        _print_analysis(analysis)
+        print(f"recommended: {recommendation.recommended_engine.value}")
+        if recommendation.best_available_engine is None:
+            print("installed complete-coverage engine: none")
+        else:
+            print(
+                "installed complete-coverage engine: "
+                f"{recommendation.best_available_engine.value}"
+            )
+        try:
+            answer = input("Convert now? [Y/n]: ").strip().casefold()
+        except EOFError:
+            print()
+            return 0
+        if answer not in {"", "y", "yes"}:
+            continue
+        try:
+            with Workflow(config) as workflow:
+                result = workflow.convert(source)
+        except (AnalysisError, OSError, ValueError, RuntimeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            continue
+        print(f"status: {result.status.value}")
+        print(f"run: {result.run_dir}")
+        print(f"manifest: {result.manifest_path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kilix-pdf",
         description="Validated multi-engine PDF-to-Markdown conversion",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command")
+
+    interactive = subparsers.add_parser(
+        "interactive",
+        help="start a guided conversion session",
+    )
+    _add_config_argument(interactive)
+    _add_profile_argument(interactive)
+    interactive.add_argument("--output-root", type=Path)
+    interactive.set_defaults(handler=command_interactive)
 
     doctor = subparsers.add_parser("doctor", help="inspect installed capabilities")
     doctor.add_argument("--json", action="store_true")
@@ -380,10 +452,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            arguments = ["interactive"]
+        else:
+            parser.print_help(sys.stderr)
+            return 2
+    args = parser.parse_args(arguments)
     try:
         return int(args.handler(args))
-    except (AnalysisError, FileNotFoundError, ValueError, RuntimeError) as error:
+    except (AnalysisError, OSError, ValueError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
