@@ -1,6 +1,9 @@
 PYTHON ?= python3
+UV ?= uv
 RUNTIME_DIR ?= .runtime
+RUNTIME_PROJECT ?= runtime
 RUNTIME_PY := $(RUNTIME_DIR)/bin/python
+RUNTIME_ENV := $(abspath $(RUNTIME_DIR))
 
 .DEFAULT_GOAL := help
 
@@ -15,7 +18,7 @@ help:
 		'  make doctor  Inspect runtime capabilities' \
 		'  make verify  Run lint, tests, and the base doctor check' \
 		'  make build   Build wheel and source distribution' \
-		'  make runtime Build the pinned Python runtime without uv' \
+		'  make runtime Build the frozen uv-managed Python runtime' \
 		'  make runtime-check  Verify the pinned runtime and launcher'
 
 test:
@@ -34,10 +37,11 @@ build:
 
 runtime:
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
-	$(PYTHON) -m venv "$(RUNTIME_DIR)"
-	"$(RUNTIME_PY)" -m pip --disable-pip-version-check install \
-		--require-hashes --only-binary=:all: \
-		-r requirements/runtime-py311.lock
+	command -v "$(UV)" >/dev/null 2>&1 || { \
+		echo 'uv is required to build the managed runtime' >&2; exit 1; }
+	UV_PROJECT_ENVIRONMENT="$(RUNTIME_ENV)" "$(UV)" sync \
+		--project "$(RUNTIME_PROJECT)" --frozen --no-dev \
+		--no-install-project --python "$(PYTHON)"
 	"$(RUNTIME_PY)" -c 'import pymupdf; pymupdf.no_recommend_layout(); import pymupdf4llm'
 
 runtime-check:

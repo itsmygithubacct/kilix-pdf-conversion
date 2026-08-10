@@ -3,7 +3,7 @@
 Kilix PDF Conversion is distributed under AGPL-3.0-only. Copyright (C) 2026
 itsmygithubacct. See `LICENSE` for the complete terms and warranty disclaimer.
 
-## Base 0.1.9 runtime
+## Base runtime
 
 The pinned base runtime contains PyMuPDF, PyMuPDF4LLM, and Tabulate. Artifex
 offers PyMuPDF and PyMuPDF4LLM under the GNU Affero General Public License and
@@ -20,12 +20,12 @@ PyMuPDF Layout, which is offered under PolyForm Noncommercial or a commercial
 license. PyMuPDF Layout is not part of this public base runtime.
 
 The exact distributed versions and artifact hashes are recorded in
-`requirements/runtime-py311.lock`.
+`runtime/uv.lock`.
 
 ## Optional model engines
 
 Granite-Docling and Marker are optional integrations. They are not installed by
-the 0.1.9 base runtime lock and are mutually isolated because their model stacks
+the base runtime lock and are mutually isolated because their model stacks
 have incompatible dependency closures.
 
 - Docling source code is offered under the MIT license. Models used through

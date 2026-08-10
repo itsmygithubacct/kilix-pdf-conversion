@@ -51,13 +51,14 @@ quality gates. The forensic profile runs every installed engine.
 
 ## Installation
 
-Python 3.11 or newer is required. On Debian/Plebian OS, install `python3-venv`.
+Python 3.11 or newer and `uv` are required.
 
 ### Plebian OS and Kilix runtime
 
-The 0.1.9 runtime does not require `uv`. It uses the standard-library `venv`
-module and installs an exact Linux x86-64 dependency closure whose artifacts
-are SHA-256 verified by pip:
+The managed runtime is created from the checked-in `runtime/uv.lock`.
+That lock contains only the small AGPL-compatible base runtime; optional model
+engines cannot leak into it. `--frozen` prevents installation from silently
+changing that dependency closure:
 
 ~~~sh
 make runtime
@@ -65,15 +66,19 @@ make runtime
 ./kilix-pdf
 ~~~
 
-The no-argument launcher starts a guided terminal session. `uv` is used by
-maintainers to regenerate the tracked lock, but it is not part of the installed
-application or its launch path.
+The no-argument launcher starts a guided terminal session. A PDF may also be
+opened directly, which is the path used by desktop launchers and file
+associations:
+
+~~~sh
+./kilix-pdf report.pdf
+~~~
 
 ### Base and development tools
 
 ~~~sh
-uv sync --python 3.11 --extra dev
-uv run kilix-pdf doctor
+uv run --no-project --python 3.11 --with-editable . \
+  --with pytest --with ruff --with build kilix-pdf doctor
 ~~~
 
 ### Granite-Docling
@@ -96,7 +101,7 @@ uv pip install --python .venv/bin/python -e '.[marker]'
 
 Marker and Granite have large, mutually incompatible model/runtime dependency
 closures and must use separate virtual environments. Neither is installed by
-the 0.1.9 base runtime. The CLI can be invoked with the interpreter that owns
+the base runtime. The CLI can be invoked with the interpreter that owns
 the desired engine. The **--device** override applies to both model adapters,
 so **--device cpu** provides a low-memory Marker fallback. Review the model and
 code licenses in [the third-party notices](THIRD-PARTY-NOTICES.md) first.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kilix-pdf-conversion"
-version = "0.3.0"
+version = "0.3.1"
 description = "Validated multi-engine PDF-to-Markdown conversion workflow"
 readme = "README.md"
 requires-python = ">=3.11"

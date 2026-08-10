@@ -459,6 +459,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             parser.print_help(sys.stderr)
             return 2
+    commands = {
+        "interactive",
+        "doctor",
+        "inspect",
+        "recommend",
+        "plan",
+        "convert",
+        "batch",
+        "validate",
+    }
+    if arguments[0] not in commands and not arguments[0].startswith("-"):
+        # A desktop file association and ``kilix pdf report.pdf`` should both
+        # be able to hand us a document directly. Keep the explicit subcommand
+        # grammar for scripts while treating one leading path as ``convert``.
+        arguments.insert(0, "convert")
     args = parser.parse_args(arguments)
     try:
         return int(args.handler(args))

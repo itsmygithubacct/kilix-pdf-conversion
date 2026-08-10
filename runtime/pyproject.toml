@@ -1,0 +1,11 @@
+[project]
+name = "kilix-pdf-runtime"
+version = "0.3.1"
+requires-python = ">=3.11"
+dependencies = [
+  "pymupdf>=1.27.1,<1.28",
+  "pymupdf4llm==0.3.4",
+]
+
+[tool.uv]
+package = false

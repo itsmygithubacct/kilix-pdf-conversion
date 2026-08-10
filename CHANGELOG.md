@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - 2026-08-10
+
+- Build the managed application runtime from the frozen, base-only
+  `runtime/uv.lock` with `uv`.
+- Treat a directly supplied PDF path as the normal single-file conversion
+  command so desktop file associations and `kilix pdf FILE` work.
+
 ## 0.3.0 - 2026-08-10
 
 - Support the Python 3.11 baseline shipped by Plebian OS.
