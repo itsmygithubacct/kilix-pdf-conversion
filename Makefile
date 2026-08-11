@@ -4,10 +4,11 @@ RUNTIME_DIR ?= .runtime
 RUNTIME_PROJECT ?= runtime
 RUNTIME_PY := $(RUNTIME_DIR)/bin/python
 RUNTIME_ENV := $(abspath $(RUNTIME_DIR))
+UV_DEV := "$(UV)" run --no-project --python "$(PYTHON)" --with-editable . --with pytest --with ruff --with build
 
 .DEFAULT_GOAL := help
 
-.PHONY: help test lint doctor verify build runtime runtime-check
+.PHONY: help uv-check test lint doctor verify build runtime runtime-check
 
 help:
 	@printf '%s\n' \
@@ -21,19 +22,23 @@ help:
 		'  make runtime Build the frozen uv-managed Python runtime' \
 		'  make runtime-check  Verify the pinned runtime and launcher'
 
-test:
-	$(PYTHON) -m pytest
+uv-check:
+	command -v "$(UV)" >/dev/null 2>&1 || { \
+		echo 'uv is required' >&2; exit 1; }
 
-lint:
-	$(PYTHON) -m ruff check .
+test: uv-check
+	$(UV_DEV) python -m pytest
 
-doctor:
-	$(PYTHON) -m kilix_pdf_conversion doctor
+lint: uv-check
+	$(UV_DEV) python -m ruff check .
+
+doctor: uv-check
+	$(UV_DEV) kilix-pdf doctor
 
 verify: lint test doctor
 
-build:
-	$(PYTHON) -m build
+build: uv-check
+	$(UV_DEV) python -m build
 
 runtime:
 	$(PYTHON) -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'

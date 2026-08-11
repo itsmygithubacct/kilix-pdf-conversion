@@ -76,9 +76,13 @@ associations:
 
 ### Base and development tools
 
+The Make targets provision their development tools through `uv`; they do not
+depend on pytest, Ruff, or build being installed in the system interpreter:
+
 ~~~sh
-uv run --no-project --python 3.11 --with-editable . \
-  --with pytest --with ruff --with build kilix-pdf doctor
+make test
+make lint
+make build
 ~~~
 
 ### Granite-Docling

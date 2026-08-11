@@ -38,11 +38,8 @@ jobs:
       - name: Verify source and package
         run: |
           bash -n kilix-pdf
-          uv run --no-project --python python --with-editable . \
-            --with pytest --with ruff --with build \
-            make PYTHON=python verify
-          uv run --no-project --python python --with-editable . \
-            --with build make PYTHON=python build
+          make PYTHON=python UV=uv verify
+          make PYTHON=python UV=uv build
           git diff --check "$(git hash-object -t tree /dev/null)" HEAD -- .
 
       - name: Verify the uv-managed runtime path
