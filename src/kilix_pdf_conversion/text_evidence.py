@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-TEXT_EVIDENCE_POLICY_VERSION = 1
+TEXT_EVIDENCE_POLICY_VERSION = 2
 
 
 class TextTrust(StrEnum):
@@ -139,7 +139,15 @@ def inspect_page_text(page) -> PageTextEvidence:
             if "\ufffd" in text or "\x00" in text:
                 reasons.add("unmapped_characters")
                 suspect = True
-            if not _finite_box(box) or not _inside(box, rect):
+            if not _finite_box(box):
+                reasons.add("unresolved_text_geometry")
+                continue
+            # Trace coordinates are unrotated. The rendered page rectangle
+            # need not share that coordinate system for rotated/cropped pages.
+            if unsupported_geometry:
+                reasons.add("unsupported_text_geometry")
+                continue
+            if not _inside(box, rect):
                 reasons.add("invalid_or_offpage_text_geometry")
                 suspect = True
                 continue
@@ -150,18 +158,32 @@ def inspect_page_text(page) -> PageTextEvidence:
             if span.get("type") not in {0, 1} or span.get("opacity") != 1:
                 reasons.add("unsupported_or_translucent_text")
                 continue
-            if (unsupported_geometry or tuple(span.get("dir", ())) != (1, 0)
+            if (tuple(span.get("dir", ())) != (1, 0)
                     or span.get("bidi_lvl", 0)):
                 reasons.add("unsupported_text_geometry")
                 continue
             if any(_overlaps(box, image) for image in images):
                 reasons.add("text_over_image_unverified")
                 continue
+            # Contrast in a span's rectangle may belong entirely to earlier
+            # graphics, including marks in interword spaces. It cannot prove
+            # that this text painted visible glyphs on that background.
+            if any(
+                index < span.get("seqno", -1)
+                and item[0] in {"fill-path", "stroke-path", "fill-shade"}
+                and _overlaps(box, item[1])
+                for index, item in enumerate(painting)
+            ):
+                reasons.add("background_paint_unverified")
+                continue
             # A later drawing may be transparent. Overlap is uncertainty,
             # not a claim that the visible source is corrupt.
             if any(
                 index > span.get("seqno", -1)
-                and item[0] in {"fill-path", "fill-image", "fill-shade", "fill-text", "stroke-text"}
+                and item[0] in {
+                    "fill-path", "stroke-path", "fill-image", "fill-shade",
+                    "fill-text", "stroke-text",
+                }
                 and _overlaps(box, item[1])
                 for index, item in enumerate(painting)
             ):

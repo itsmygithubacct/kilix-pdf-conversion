@@ -203,7 +203,8 @@ def test_cache_rejects_changed_conversion_settings(tmp_path) -> None:
             workflow.convert(source)
 
 
-def test_old_quality_pass_cannot_be_reused_as_new_validation(tmp_path) -> None:
+@pytest.mark.parametrize("old_schema", [2, 3])
+def test_old_quality_pass_cannot_be_reused_as_new_validation(tmp_path, old_schema) -> None:
     source = make_native_pdf(tmp_path / "source.pdf")
     config = AppConfig(workflow=WorkflowSettings(
         profile=Profile.FAST, output_root=tmp_path / "runs", render_visual_pages=False,
@@ -211,12 +212,30 @@ def test_old_quality_pass_cannot_be_reused_as_new_validation(tmp_path) -> None:
     with Workflow(config) as workflow:
         first = workflow.convert(source)
     old = json.loads(first.manifest_path.read_text())
-    old["schema_version"] = 2
+    old["schema_version"] = old_schema
     old.pop("content_accuracy")
     first.manifest_path.write_text(json.dumps(old))
     before = first.manifest_path.read_bytes()
     with Workflow(config) as workflow:
         with pytest.raises(RuntimeError, match="unsupported manifest"):
+            workflow.convert(source)
+    assert first.manifest_path.read_bytes() == before
+
+
+def test_changed_text_evidence_policy_invalidates_cached_validation(tmp_path, monkeypatch):
+    from kilix_pdf_conversion import workflow as module
+
+    source = make_native_pdf(tmp_path / "source.pdf")
+    config = AppConfig(workflow=WorkflowSettings(
+        profile=Profile.FAST, output_root=tmp_path / "runs", render_visual_pages=False,
+    ))
+    with Workflow(config) as workflow:
+        first = workflow.convert(source)
+    before = first.manifest_path.read_bytes()
+    monkeypatch.setattr(module, "TEXT_EVIDENCE_POLICY_VERSION",
+                        module.TEXT_EVIDENCE_POLICY_VERSION + 1)
+    with Workflow(config) as workflow:
+        with pytest.raises(RuntimeError, match="different conversion settings"):
             workflow.convert(source)
     assert first.manifest_path.read_bytes() == before
 

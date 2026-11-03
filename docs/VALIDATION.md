@@ -61,6 +61,17 @@ numbers do not select a winner by a similarity threshold.
 `hybrid-text.json` retains model text, proposed backend text, source evidence and
 the decision. Original model text also remains in `orig` and generation traces.
 This conservative policy can normalize wrapping; it does not repair model OCR.
+
+Rendering evidence also remains unknown when earlier drawings overlap text:
+contrast in a text box may come from graphics between invisible glyphs. This
+includes filled and stroked backgrounds, even when the text is actually visible.
+Later strokes can obscure text just like fills. Nonfinite or degenerate trace
+bounds and unsupported page transforms are unresolved geometry, not proof that
+text lies off the page; finite off-page bounds in a supported coordinate system
+remain suspect. These conservative decisions preserve useful output for review.
+
+The text-evidence policy version participates directly in the conversion cache
+fingerprint. Manifest schema 4 rejects earlier visibility decisions as well.
 Pure mode and chart enrichment lifecycle/gating remain separate.
 
 ## Selection and review

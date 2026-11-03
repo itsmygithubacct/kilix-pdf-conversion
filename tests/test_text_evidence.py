@@ -10,6 +10,7 @@ from kilix_pdf_conversion.quality import validate_markdown
 from kilix_pdf_conversion.text_evidence import (
     TextTrust,
     choose_hybrid_text,
+    inspect_page_text,
     inspect_source_text,
 )
 
@@ -93,3 +94,82 @@ def test_legitimate_repeated_values_are_not_a_decoder_loop(tmp_path):
     excess = validate_markdown(source, markdown, EngineName.PYMUPDF, analysis, settings)
     assert excess.status is QualityStatus.FAIL
     assert any("supported source contains 24" in error for error in excess.errors)
+
+
+@pytest.mark.parametrize("stroke", [False, True])
+def test_graphics_in_word_spaces_cannot_certify_invisible_text(tmp_path, stroke):
+    source = tmp_path / "unrelated-ink.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        box = pymupdf.Rect(94, 54, 96, 59)
+        page.draw_rect(box, color=(0, 0, 0) if stroke else None,
+                       fill=None if stroke else (0, 0, 0))
+        before = page.get_pixmap().samples
+        page.insert_text((40, 60), "HARBOR          archive", fontsize=11, color=(1, 1, 1))
+        # The text is extracted, but it contributes no rendered pixels at all.
+        assert page.get_text().strip() == "HARBOR          archive"
+        assert page.get_pixmap().samples == before
+        doc.save(source)
+    evidence = inspect_source_text(source)
+    assert evidence.trust is TextTrust.UNKNOWN
+    assert evidence.reference_pages == ()
+    assert "background_paint_unverified" in evidence.pages[0].reasons
+
+
+def test_later_stroke_makes_visibility_uncertain(tmp_path):
+    source = tmp_path / "strike.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((40, 60), "Partly obscured ledger", fontsize=11)
+        page.draw_line((35, 56), (220, 56), color=(0, 0, 0), width=2)
+        doc.save(source)
+    evidence = inspect_source_text(source)
+    assert evidence.trust is TextTrust.UNKNOWN
+    assert "possible_later_occlusion" in evidence.pages[0].reasons
+
+
+@pytest.mark.parametrize("rotation", [90, 180, 270])
+def test_rotated_page_does_not_compare_incompatible_coordinate_spaces(tmp_path, rotation):
+    source = tmp_path / "rotated.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=800, height=300)
+        page.insert_text((400, 60), "Valid original page coordinates", fontsize=11)
+        page.set_rotation(rotation)
+        doc.save(source)
+    evidence = inspect_source_text(source)
+    assert evidence.trust is TextTrust.UNKNOWN
+    assert "invalid_or_offpage_text_geometry" not in evidence.pages[0].reasons
+    markdown = tmp_path / "result.md"
+    markdown.write_text("Valid original page coordinates")
+    report = validate_markdown(
+        source, markdown, EngineName.PYMUPDF, analyze_pdf(source),
+        ValidationSettings(minimum_markdown_bytes=1),
+    )
+    assert report.status is QualityStatus.WARN
+    assert not report.fallback_recommended
+
+
+@pytest.mark.parametrize("box", [
+    (float("nan"), 0, 10, 10), (0, 0, float("inf"), 10), (0, 0, 0, 10),
+])
+def test_unresolved_trace_geometry_is_not_a_source_contradiction(tmp_path, monkeypatch, box):
+    source = make_text_pdf(tmp_path / "page.pdf", ["Unresolved coordinates"])
+    with pymupdf.open(source) as doc:
+        page = doc[0]
+        traces = page.get_texttrace()
+        traces[0] = dict(traces[0], bbox=box)
+        monkeypatch.setattr(page, "get_texttrace", lambda: traces)
+        evidence = inspect_page_text(page)
+    assert evidence.trust is TextTrust.UNKNOWN
+    assert "unresolved_text_geometry" in evidence.reasons
+
+
+def test_finite_offpage_geometry_remains_suspect(tmp_path):
+    source = tmp_path / "offpage.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((-20, 60), "Text crosses the page edge", fontsize=11)
+        doc.save(source)
+    evidence = inspect_source_text(source)
+    assert evidence.trust is TextTrust.SUSPECT
+    assert "invalid_or_offpage_text_geometry" in evidence.pages[0].reasons

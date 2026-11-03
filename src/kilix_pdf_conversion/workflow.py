@@ -24,6 +24,7 @@ from .models import (
 from .quality import validate_markdown
 from .recommendation import recommend_conversion
 from .reporting import write_run_report
+from .text_evidence import TEXT_EVIDENCE_POLICY_VERSION
 from .util import (
     append_json_line,
     atomic_write_json,
@@ -38,7 +39,7 @@ MODEL_ENGINES = {
     EngineName.GRANITE_PURE,
     EngineName.MARKER,
 }
-MANIFEST_SCHEMA_VERSION = 3
+MANIFEST_SCHEMA_VERSION = 4
 
 
 class Workflow:
@@ -81,6 +82,7 @@ class Workflow:
         payload = {
             "schema_version": 1,
             "recommendation_policy_version": policy_version,
+            "text_evidence_policy_version": TEXT_EVIDENCE_POLICY_VERSION,
             "settings": settings,
             "route": {
                 "profile": plan.profile.value,
