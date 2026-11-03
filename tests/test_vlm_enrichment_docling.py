@@ -155,7 +155,7 @@ def models(monkeypatch, tmp_path):
     chart_enrichment_pipeline.cache_clear()
 
 
-def converter(*, fixed=True, charts=True, classify=False, legacy=False):
+def converter(*, fixed=True, charts=True, classify=False, legacy=False, base_pipeline=None):
     options = VlmPipelineOptions(
         accelerator_options=AcceleratorOptions(device="cpu", num_threads=2),
         do_chart_extraction=charts,
@@ -167,7 +167,7 @@ def converter(*, fixed=True, charts=True, classify=False, legacy=False):
         options.vlm_options = VlmConvertOptions.from_preset("granite_docling")
     return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(
         backend=PyPdfiumDocumentBackend,
-        pipeline_cls=chart_enrichment_pipeline() if fixed else VlmPipeline,
+        pipeline_cls=chart_enrichment_pipeline(base_pipeline) if fixed else VlmPipeline,
         pipeline_options=options,
     )})
 
@@ -220,6 +220,31 @@ def test_flag_off_never_initializes_or_runs_optional_models(models, fixture_pdf)
     assert result.status == ConversionStatus.SUCCESS
     assert all(stage not in {"classifier", "chart"} for _, stage in events)
     assert all(picture.meta is None for picture in result.document.pictures)
+
+
+def test_custom_runtime_initializer_is_composed_without_duplicate_models(models, fixture_pdf):
+    from docling.pipeline.vlm_pipeline import VlmConvertModel
+
+    events, _, _ = models
+
+    class RuntimePipeline(VlmPipeline):
+        def _initialize_new_runtime_system(self, pipeline_options):
+            events.append(("initialize", "custom_runtime"))
+            self.force_backend_text = False
+            self.keep_images = pipeline_options.generate_page_images
+            self.build_pipe = [VlmConvertModel()]
+
+    wrapped = chart_enrichment_pipeline(RuntimePipeline)
+    assert issubclass(wrapped, RuntimePipeline)
+    assert chart_enrichment_pipeline(RuntimePipeline) is wrapped
+    result = converter(base_pipeline=RuntimePipeline).convert(fixture_pdf, raises_on_error=False)
+    assert result.status == ConversionStatus.SUCCESS
+    counts = Counter(events)
+    assert counts[("initialize", "custom_runtime")] == 1
+    for stage in ("page", "classifier", "chart"):
+        assert counts[("construct", stage)] == 1
+        assert counts[("run", stage)] == 1
+    assert events.index(("run", "chart")) < events.index(("unload", "backend"))
 
 
 def test_repeat_conversion_reuses_models_without_duplicate_enrichment(models, fixture_pdf):

@@ -17,13 +17,17 @@ DOCLING_VERSION = "2.118.0"
 
 
 @cache
-def chart_enrichment_pipeline() -> type[VlmPipeline]:
+def chart_enrichment_pipeline(
+    base_pipeline: type[VlmPipeline] | None = None,
+) -> type[VlmPipeline]:
     """Return a stable pipeline class without loading any model.
 
     Docling 2.118.0 constructs enrichment in ConvertPipeline, then clears it
     in VlmPipeline after initializing the page model. Retain that same list
     across initialization so Docling executes it before unloading backends.
     This adapter relies on the initializer contract of this exact version.
+    A custom VlmPipeline subclass may supply its own page-model initializer;
+    wrapping it here retains enrichment without initializing that model twice.
     """
     try:
         installed = version("docling-slim")
@@ -36,7 +40,11 @@ def chart_enrichment_pipeline() -> type[VlmPipeline]:
 
     from docling.pipeline.vlm_pipeline import VlmPipeline
 
-    class ChartEnrichmentVlmPipeline(VlmPipeline):
+    pipeline_base = VlmPipeline if base_pipeline is None else base_pipeline
+    if not issubclass(pipeline_base, VlmPipeline):
+        raise TypeError("The enrichment base must derive from Docling VlmPipeline")
+
+    class ChartEnrichmentVlmPipeline(pipeline_base):
         def __init__(self, pipeline_options: VlmPipelineOptions) -> None:
             self._kilix_saved_enrichment = None
             self._kilix_retain_enrichment = (
