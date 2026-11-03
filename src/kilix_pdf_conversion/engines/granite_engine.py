@@ -12,6 +12,12 @@ from .base import ConversionEngine, EngineUnavailable
 from .granite_support import REPOSITORY, REVISION, check_runtime, verify_asset
 
 
+def _require_chart_assets() -> None:
+    # No accepted classifier/chart manifest is supplied by this candidate.
+    # Keep this boundary closed even though the lifecycle helper is integrated.
+    raise EngineUnavailable("Chart extraction requires accepted, pinned classifier and chart assets")
+
+
 def _relative_asset_references(markdown: str, assets_dir: Path) -> str:
     """Replace Docling's absolute artifact prefix with a portable local one."""
     resolved = assets_dir.resolve()
@@ -42,10 +48,7 @@ class GraniteEngine(ConversionEngine):
         runtime = check_runtime()
         directory, manifest = verify_asset(self.settings.model_directory)
         if self.settings.chart_extraction:
-            raise EngineUnavailable(
-                "Chart extraction requires the separately validated enrichment candidate "
-                "and accepted chart assets"
-            )
+            _require_chart_assets()
         try:
             from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.datamodel.base_models import InputFormat
@@ -56,6 +59,7 @@ class GraniteEngine(ConversionEngine):
             from docling.document_converter import DocumentConverter, PdfFormatOption
 
             from .granite_runtime import GranitePipelineOptions, granite_pipeline_class
+            from .vlm_enrichment import chart_enrichment_pipeline
         except ImportError as error:
             raise EngineUnavailable(
                 "Granite-Docling import failed; rebuild the frozen optional runtime"
@@ -88,7 +92,7 @@ class GraniteEngine(ConversionEngine):
         converter = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
-                    pipeline_cls=granite_pipeline_class(),
+                    pipeline_cls=chart_enrichment_pipeline(granite_pipeline_class()),
                     pipeline_options=pipeline_options,
                 )
             }

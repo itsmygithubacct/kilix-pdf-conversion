@@ -122,8 +122,10 @@ successful conversion do not establish content correctness. Hybrid substitutes
 PDF text into predicted text regions; it does not correct table cells or reading
 order, and a missing or incorrect PDF text layer can damage hybrid output.
 
-Chart extraction is unavailable in this standalone runtime candidate. It needs
-the separately validated enrichment integration and accepted chart assets.
+The chart-enrichment lifecycle helper is integrated, but chart extraction stays
+unavailable until accepted, pinned classifier and chart assets are supplied.
+The adapter fails before constructing any chart model. Lifecycle tests with
+substituted predictions do not establish numerical chart accuracy.
 
 ### Marker
 
