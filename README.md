@@ -87,15 +87,43 @@ make build
 
 ### Granite-Docling
 
-Granite is an optional extra because GPU-enabled PyTorch installation depends
-on the local accelerator and driver:
+Granite has a separate frozen CPU runtime for Linux x86-64 and Python 3.12.8.
+The default launcher continues to use the native-only `.runtime`; select the
+optional `.runtime-granite` explicitly:
 
 ~~~sh
-uv pip install --python .venv/bin/python -e '.[granite]'
+make runtime-granite
+KILIX_PDF_RUNTIME=granite ./kilix-pdf doctor --json
+KILIX_PDF_RUNTIME=granite ./kilix-pdf convert report.pdf --engine granite-pure-vlm
 ~~~
 
-Install the appropriate PyTorch build for the machine after consulting the
-PyTorch compatibility matrix. An 8 GiB GPU should start with a one-page batch.
+`runtime-granite/uv.lock` freezes the full dependency closure, including Docling
+2.118.0, Docling Core 2.90.0, Transformers 4.57.3 and CPU PyTorch 2.6.0. Merely
+installing the extra in another environment does not change the shell launcher.
+The frozen runtime uses two CPU threads, FP32, eager SDPA, the slow pinned image
+processor and one image per generation. CUDA and alternate runtime versions are
+not supported by this profile.
+
+Install/accept the Granite asset through the host's normal model acquisition
+flow. The host supplies `KILIX_CONTENT_ROOT`; the adapter verifies all files in
+its `assets/granite-docling-258m` directory against revision
+`982fe3b40f2fa73c365bdb1bcacf6c81b7184bfe`. For a standalone accepted copy, set
+`KILIX_GRANITE_MODEL_DIR` or `[granite].model_directory` to the model directory.
+Missing or mismatched files fail before loading. Conversion never downloads a
+replacement, requests `main`, or creates a license receipt.
+
+Successful Granite outputs include `document.json` and `generation.json` beside
+Markdown. The latter records the model identity, raw/cleaned text, generated IDs,
+prompt and generated counts, stop cause, limits and timing. Complete trailing pad
+tokens are removed without stripping ordinary characters. A generation cap or
+incomplete DocTags fails conversion. `[granite].max_new_tokens` defaults to 8192;
+the effective limit also respects the remaining configured context. Syntax and
+successful conversion do not establish content correctness. Hybrid substitutes
+PDF text into predicted text regions; it does not correct table cells or reading
+order, and a missing or incorrect PDF text layer can damage hybrid output.
+
+Chart extraction is unavailable in this standalone runtime candidate. It needs
+the separately validated enrichment integration and accepted chart assets.
 
 ### Marker
 

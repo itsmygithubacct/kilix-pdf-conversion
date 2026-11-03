@@ -14,6 +14,7 @@ def test_available_engine_names_maps_shared_docling_runtime() -> None:
             "docling": {"available": True},
             "marker": {"available": False},
         },
+        "granite": {"available": True},
     }
 
     assert available_engine_names(capabilities) == {
@@ -21,3 +22,5 @@ def test_available_engine_names_maps_shared_docling_runtime() -> None:
         EngineName.GRANITE_HYBRID,
         EngineName.GRANITE_PURE,
     }
+    capabilities["granite"]["available"] = False
+    assert available_engine_names(capabilities) == {EngineName.PYMUPDF}

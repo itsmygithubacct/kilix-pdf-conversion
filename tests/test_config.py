@@ -41,6 +41,8 @@ device = "cuda"
         ("[pymupdf]\ndpi = 12\n", "at least 36"),
         ("[analysis]\nscan_page_ratio = 0.9\n", "must be below"),
         ("[marker]\ndevice = 7\n", "must be auto, cpu, or cuda"),
+        ("[granite]\nmodel_directory = false\n", "filesystem path string"),
+        ("[granite]\nmax_new_tokens = 0\n", "at least 1"),
         ("[workflow]\nunknown = true\n", "unknown option"),
         ("[mystery]\nvalue = true\n", "unknown configuration section"),
     ],

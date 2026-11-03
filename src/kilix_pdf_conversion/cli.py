@@ -94,6 +94,8 @@ def command_doctor(args: argparse.Namespace) -> int:
                 detail = f" {item['version']}" if item["version"] else ""
                 print(f"{name}: {state}{detail}")
         accelerator = capabilities["accelerator"]
+        granite = capabilities["granite"]
+        print("Granite: " + ("ready on CPU" if granite["available"] else granite["error"]))
         print(
             "CUDA: "
             + (
@@ -147,7 +149,7 @@ def command_plan(args: argparse.Namespace) -> int:
 def command_recommend(args: argparse.Namespace) -> int:
     config = _configured(args)
     analysis = _analysis(args.source, config)
-    capabilities = detect_capabilities()
+    capabilities = detect_capabilities(model_directory=config.granite.model_directory)
     recommendation = recommend_conversion(
         analysis,
         config.workflow.profile,

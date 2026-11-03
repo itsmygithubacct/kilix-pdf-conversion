@@ -10,6 +10,7 @@ dist/
 .venv/
 .venv-*/
 .runtime/
+.runtime-granite/
 output/
 runs/
 *.part

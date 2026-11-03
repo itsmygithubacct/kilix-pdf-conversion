@@ -49,7 +49,9 @@ class Workflow:
 
     def _installed_engines(self) -> frozenset[EngineName]:
         if self._available_engines is None:
-            self._available_engines = available_engine_names(detect_capabilities())
+            self._available_engines = available_engine_names(
+                detect_capabilities(model_directory=self.config.granite.model_directory)
+            )
         return self._available_engines
 
     def _engine(self, name: EngineName) -> ConversionEngine:

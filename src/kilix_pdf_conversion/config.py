@@ -99,11 +99,13 @@ class PyMuPDFSettings:
 
 @dataclass(frozen=True)
 class GraniteSettings:
-    device: str = "cuda"
+    device: str = "cpu"
     page_batch_size: int = 1
-    threads: int = 4
+    threads: int = 2
     document_timeout: float = 1800.0
     chart_extraction: bool = False
+    model_directory: Path | None = None
+    max_new_tokens: int = 8192
 
     def __post_init__(self) -> None:
         _require_device(self.device, "granite.device")
@@ -122,6 +124,9 @@ class GraniteSettings:
                 "granite.document_timeout must be greater than 0 and at most 86400"
             )
         _require_boolean(self.chart_extraction, "granite.chart_extraction")
+        if self.model_directory is not None and not isinstance(self.model_directory, Path):
+            raise ValueError("granite.model_directory must be a filesystem path")
+        _require_integer(self.max_new_tokens, "granite.max_new_tokens", minimum=1, maximum=8192)
 
 
 @dataclass(frozen=True)
@@ -277,15 +282,22 @@ def load_config(path: Path | None = None) -> AppConfig:
                 "threads",
                 "document_timeout",
                 "chart_extraction",
+                "model_directory",
+                "max_new_tokens",
             }
         ),
     )
+    model_directory = granite_data.get("model_directory")
+    if model_directory is not None and not isinstance(model_directory, str):
+        raise ValueError("granite.model_directory must be a filesystem path string")
     granite = GraniteSettings(
-        device=granite_data.get("device", "cuda"),
+        device=granite_data.get("device", "cpu"),
         page_batch_size=granite_data.get("page_batch_size", 1),
-        threads=granite_data.get("threads", 4),
+        threads=granite_data.get("threads", 2),
         document_timeout=granite_data.get("document_timeout", 1800),
         chart_extraction=granite_data.get("chart_extraction", False),
+        model_directory=Path(model_directory) if model_directory is not None else None,
+        max_new_tokens=granite_data.get("max_new_tokens", 8192),
     )
     marker_data = _section(data, "marker", frozenset({"device"}))
     marker = MarkerSettings(device=marker_data.get("device", "auto"))

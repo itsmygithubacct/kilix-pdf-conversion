@@ -12,9 +12,9 @@ scan_page_ratio = 0.20
 max_table_scan_pages = 24
 
 [granite]
-device = "cuda"
+device = "cpu"
 page_batch_size = 1
-threads = 4
+threads = 2
 document_timeout = 1800
 chart_extraction = false
 

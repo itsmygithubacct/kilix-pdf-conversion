@@ -2,11 +2,15 @@
 set -euo pipefail
 
 app_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-runtime_python="$app_root/.runtime/bin/python"
+case "${KILIX_PDF_RUNTIME:-native}" in
+    native) runtime_python="$app_root/.runtime/bin/python"; runtime_target=runtime ;;
+    granite) runtime_python="$app_root/.runtime-granite/bin/python"; runtime_target=runtime-granite ;;
+    *) printf 'KILIX_PDF_RUNTIME must be native or granite\n' >&2; exit 2 ;;
+esac
 export PYMUPDF_SUGGEST_LAYOUT_ANALYZER=0
 
 if [[ ! -x "$runtime_python" ]]; then
-    printf 'Kilix PDF Conversion runtime is missing. Run: make -C %q runtime\n' "$app_root" >&2
+    printf 'Kilix PDF Conversion runtime is missing. Run: make -C %q %s\n' "$app_root" "$runtime_target" >&2
     exit 1
 fi
 

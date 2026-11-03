@@ -29,8 +29,10 @@ dependencies = [
 
 [project.optional-dependencies]
 granite = [
-  "docling[vlm]>=2.118,<3",
-  "pypdfium2>=5.12,<6",
+  "docling[vlm]==2.118.0",
+  "docling-core==2.90.0",
+  "transformers==4.57.3",
+  "pypdfium2==5.12.1",
 ]
 marker = ["marker-pdf>=1.10,<2"]
 test = ["pytest>=8.3"]
@@ -46,6 +48,9 @@ Issues = "https://github.com/itsmygithubacct/kilix-pdf-conversion/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+kilix_pdf_conversion = ["data/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

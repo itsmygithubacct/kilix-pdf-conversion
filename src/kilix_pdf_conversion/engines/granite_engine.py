@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import json
 import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from ..config import GraniteSettings
 from ..models import EngineName, EngineResult
 from .base import ConversionEngine, EngineUnavailable
+from .granite_support import REPOSITORY, REVISION, check_runtime, verify_asset
 
 
 def _relative_asset_references(markdown: str, assets_dir: Path) -> str:
@@ -29,34 +31,49 @@ class GraniteEngine(ConversionEngine):
         self.name = mode
         self.settings = settings
         self._converter = None
+        self._pipeline = None
+        self._identity: dict = {}
 
     @property
     def hybrid(self) -> bool:
         return self.name is EngineName.GRANITE_HYBRID
 
     def _make_converter(self):
+        runtime = check_runtime()
+        directory, manifest = verify_asset(self.settings.model_directory)
+        if self.settings.chart_extraction:
+            raise EngineUnavailable(
+                "Chart extraction requires the separately validated enrichment candidate "
+                "and accepted chart assets"
+            )
         try:
             from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import (
                 VlmConvertOptions,
-                VlmPipelineOptions,
             )
-            from docling.datamodel.settings import settings as docling_settings
+            from docling.datamodel.vlm_engine_options import TransformersVlmEngineOptions
             from docling.document_converter import DocumentConverter, PdfFormatOption
-            from docling.pipeline.vlm_pipeline import VlmPipeline
+
+            from .granite_runtime import GranitePipelineOptions, granite_pipeline_class
         except ImportError as error:
             raise EngineUnavailable(
-                "Granite-Docling is unavailable; install the granite extra"
+                "Granite-Docling import failed; rebuild the frozen optional runtime"
             ) from error
 
-        docling_settings.perf.page_batch_size = self.settings.page_batch_size
         vlm_options = VlmConvertOptions.from_preset(
             "granite_docling",
             batch_size=self.settings.page_batch_size,
             force_backend_text=self.hybrid,
         )
-        pipeline_options = VlmPipelineOptions(
+        vlm_options.model_spec = vlm_options.model_spec.model_copy(deep=True)
+        vlm_options.model_spec.revision = REVISION
+        vlm_options.model_spec.max_new_tokens = self.settings.max_new_tokens
+        vlm_options.engine_options = TransformersVlmEngineOptions(
+            device="cpu", torch_dtype="float32", compile_model=False, use_kv_cache=True,
+        )
+        pipeline_options = GranitePipelineOptions(
+            granite_model_directory=directory,
             accelerator_options=AcceleratorOptions(
                 device=self.settings.device,
                 num_threads=self.settings.threads,
@@ -71,12 +88,21 @@ class GraniteEngine(ConversionEngine):
         converter = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
-                    pipeline_cls=VlmPipeline,
+                    pipeline_cls=granite_pipeline_class(),
                     pipeline_options=pipeline_options,
                 )
             }
         )
         converter.initialize_pipeline(InputFormat.PDF)
+        self._pipeline = next(iter(converter.initialized_pipelines.values()))
+        self._identity = {
+            "repository": REPOSITORY, "revision": REVISION,
+            "checkpoint_sha256": manifest["files"]["model.safetensors"]["sha256"],
+            "model_directory": str(directory), "runtime": runtime,
+            "dtype": "float32", "attention": "sdpa", "compiled": False,
+            "actual_device": "cpu", "threads": self.settings.threads,
+            "use_cache": True, "processor": "slow", "microbatch_size": 1,
+        }
         return converter
 
     @property
@@ -100,13 +126,27 @@ class GraniteEngine(ConversionEngine):
         markdown_path = output_dir / "document.md"
         part_path = output_dir / ".document.md.part"
         started = time.monotonic()
+        generation = []
         try:
-            result = self.converter.convert(source, raises_on_error=False)
+            converter = self.converter
+            runtime_engine = self._pipeline.build_pipe[0].engine
+            runtime_engine.records.clear()
+            result = converter.convert(source, raises_on_error=False)
+            generation = list(runtime_engine.records)
+            (output_dir / "generation.json").write_text(
+                json.dumps({"model": self._identity, "pages": generation}, indent=2) + "\n",
+                encoding="utf-8",
+            )
             if result.status is not ConversionStatus.SUCCESS:
                 errors = [str(error) for error in result.errors]
                 raise RuntimeError(
                     f"conversion status {result.status.value}; errors={errors}"
                 )
+            if not generation or any(
+                row["truncated"] or not row["complete_doctags"] for row in generation
+            ):
+                raise RuntimeError("Granite returned incomplete DocTags; see generation.json")
+            result.document.save_as_json(output_dir / "document.json")
             result.document.save_as_markdown(
                 part_path,
                 artifacts_dir=assets_dir,
@@ -143,6 +183,8 @@ class GraniteEngine(ConversionEngine):
                     "page_batch_size": self.settings.page_batch_size,
                     "chart_extraction": self.settings.chart_extraction,
                     "image_mode": "referenced",
+                    "model": self._identity,
+                    "generation": generation,
                 },
             )
         except EngineUnavailable:
@@ -158,6 +200,7 @@ class GraniteEngine(ConversionEngine):
                 elapsed_seconds=round(elapsed, 3),
                 output_bytes=0,
                 error=f"{type(error).__name__}: {error}",
+                metadata={"model": self._identity, "generation": generation},
             )
         finally:
             self._release_unused_memory()
@@ -174,5 +217,10 @@ class GraniteEngine(ConversionEngine):
             pass
 
     def close(self) -> None:
+        if self._pipeline is not None:
+            for stage in self._pipeline.build_pipe:
+                if hasattr(stage, "engine"):
+                    stage.engine.cleanup()
+        self._pipeline = None
         self._converter = None
         self._release_unused_memory()

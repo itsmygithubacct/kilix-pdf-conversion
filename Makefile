@@ -8,7 +8,7 @@ UV_DEV := "$(UV)" run --no-project --python "$(PYTHON)" --with-editable . --with
 
 .DEFAULT_GOAL := help
 
-.PHONY: help uv-check test lint doctor verify build runtime runtime-check
+.PHONY: help uv-check test lint doctor verify build runtime runtime-check runtime-granite
 
 help:
 	@printf '%s\n' \
@@ -20,7 +20,8 @@ help:
 		'  make verify  Run lint, tests, and the base doctor check' \
 		'  make build   Build wheel and source distribution' \
 		'  make runtime Build the frozen uv-managed Python runtime' \
-		'  make runtime-check  Verify the pinned runtime and launcher'
+		'  make runtime-check  Verify the pinned runtime and launcher' \
+		'  make runtime-granite Build the optional frozen CPU Docling runtime'
 
 uv-check:
 	command -v "$(UV)" >/dev/null 2>&1 || { \
@@ -52,3 +53,8 @@ runtime:
 runtime-check:
 	@test -x "$(RUNTIME_PY)" || { echo 'runtime missing; run make runtime' >&2; exit 1; }
 	./kilix-pdf doctor
+
+runtime-granite: uv-check
+	UV_PROJECT_ENVIRONMENT="$(abspath .runtime-granite)" "$(UV)" sync \
+		--project runtime-granite --frozen --no-dev --no-install-project --python 3.12.8
+	KILIX_PDF_RUNTIME=granite ./kilix-pdf doctor
