@@ -56,7 +56,7 @@ def prediction(self, inputs, *, truncated=False):
 
 @pytest.mark.parametrize("mode,expected", [
     (EngineName.GRANITE_PURE, "Visual transcription."),
-    (EngineName.GRANITE_HYBRID, "Actual backend text."),
+    (EngineName.GRANITE_HYBRID, "Visual transcription."),
 ])
 def test_real_assembly_pure_and_hybrid(controlled_adapter, tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(granite_runtime.LocalGraniteEngine, "predict_batch", prediction)
@@ -70,6 +70,10 @@ def test_real_assembly_pure_and_hybrid(controlled_adapter, tmp_path, monkeypatch
         generation = json.loads((output / "generation.json").read_text())
         assert generation["pages"][0]["num_tokens"] == 11
         assert generation["pages"][0]["raw_text"].endswith("</doctag>")
+        if mode is EngineName.GRANITE_HYBRID:
+            decision = result.metadata["hybrid_text"]["decisions"][0]
+            assert decision["action"] == "retain"
+            assert decision["reason"] == "conflicting_text"
     finally:
         engine.close()
 
@@ -88,5 +92,27 @@ def test_actual_pipeline_truncation_cannot_publish_success(controlled_adapter, t
         row = json.loads((output / "generation.json").read_text())["pages"][0]
         assert row["stop_reason"] == "length"
         assert row["truncated"]
+    finally:
+        engine.close()
+
+
+def test_real_backend_equivalent_wrapping_can_be_used(controlled_adapter, tmp_path, monkeypatch):
+    def equivalent(self, inputs):
+        outputs = prediction(self, inputs)
+        for row, output in zip(self.records, outputs, strict=True):
+            text = row["text"].replace("Visual transcription.", "Actual\nbackend text.")
+            row.update(text=text, raw_text=text)
+            output.text = text
+        return outputs
+
+    monkeypatch.setattr(granite_runtime.LocalGraniteEngine, "predict_batch", equivalent)
+    engine = granite_engine.GraniteEngine(EngineName.GRANITE_HYBRID, GraniteSettings())
+    try:
+        result = engine.convert(controlled_adapter, tmp_path / "equivalent")
+        assert result.status == "success", result.error
+        decision = result.metadata["hybrid_text"]["decisions"][0]
+        assert decision["action"] == "replace"
+        assert decision["selected_text"] == "Actual backend text."
+        assert (tmp_path / "equivalent/hybrid-text.json").exists()
     finally:
         engine.close()

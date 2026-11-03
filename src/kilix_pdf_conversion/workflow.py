@@ -38,7 +38,7 @@ MODEL_ENGINES = {
     EngineName.GRANITE_PURE,
     EngineName.MARKER,
 }
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
 
 
 class Workflow:
@@ -259,7 +259,11 @@ class Workflow:
             eligible,
             key=lambda engine: (
                 status_rank[eligible[engine].status],
-                eligible[engine].score + self._selection_bonus(engine, kind),
+                eligible[engine].score + (
+                    self._selection_bonus(engine, kind)
+                    if eligible[engine].source_text_evidence.get("trust") == "trusted"
+                    or kind is not DocumentKind.NATIVE else 0.0
+                ),
             ),
         )
 
@@ -458,16 +462,20 @@ class Workflow:
             for engine_name in plan.initial_engines:
                 run_engine(engine_name)
 
-            complete_pass = any(
+            usable_initial = any(
                 quality_reports.get(engine) is not None
-                and quality_reports[engine].status is QualityStatus.PASS
+                and quality_reports[engine].status is not QualityStatus.FAIL
+                and (quality_reports[engine].status is QualityStatus.PASS
+                     or not quality_reports[engine].fallback_recommended)
                 for engine in recommendation.complete_coverage_engines
             )
-            if not explicit_engines and not complete_pass:
+            if not explicit_engines and not usable_initial:
                 for engine_name in plan.fallback_engines:
                     run_engine(engine_name)
                     report = quality_reports.get(engine_name)
-                    if report and report.status is QualityStatus.PASS:
+                    if report and report.status is not QualityStatus.FAIL and (
+                        report.status is QualityStatus.PASS or not report.fallback_recommended
+                    ):
                         break
 
             canonical_engine = self._choose(
@@ -508,6 +516,8 @@ class Workflow:
                 "configuration_sha256": configuration_sha256,
                 "created_at": utc_now(),
                 "status": status.value,
+                "validation_scope": "heuristic_checks",
+                "content_accuracy": "unverified",
                 "source": analysis.to_dict(),
                 "recommendation": recommendation.to_dict(),
                 "recommendation_overridden": bool(explicit_engines),

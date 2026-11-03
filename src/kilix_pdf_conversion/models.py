@@ -54,6 +54,7 @@ class PageSignal:
     max_table_columns: int
     multi_column: bool
     reliable_text: bool
+    source_text_trust: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ class DocumentAnalysis:
     complexity_score: float
     pages: tuple[PageSignal, ...] = ()
     warnings: tuple[str, ...] = ()
+    source_text_evidence: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -216,6 +218,10 @@ class QualityReport:
     empty_math_block_count: int
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    source_text_evidence: dict[str, Any] = field(default_factory=dict)
+    score_kind: str = "heuristic_checks"
+    content_accuracy: str = "unverified"
+    fallback_recommended: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

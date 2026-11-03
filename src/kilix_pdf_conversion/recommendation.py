@@ -13,7 +13,7 @@ from .models import (
 )
 from .routing import plan_route
 
-RECOMMENDATION_POLICY_VERSION = 1
+RECOMMENDATION_POLICY_VERSION = 2
 
 
 def _deduplicate(engines: Collection[EngineName]) -> tuple[EngineName, ...]:
@@ -52,6 +52,8 @@ def _document_priority(analysis: DocumentAnalysis) -> tuple[EngineName, ...]:
 
 
 def _confidence(analysis: DocumentAnalysis) -> RecommendationConfidence:
+    if analysis.source_text_evidence.get("trust") != "trusted":
+        return RecommendationConfidence.LOW
     if analysis.warnings or analysis.replacement_character_ratio > 0.01:
         return RecommendationConfidence.LOW
     if analysis.document_kind is DocumentKind.MIXED:
@@ -75,8 +77,8 @@ def _rationale(
         reasons.append("fast profile constrains the choice to native extraction")
     elif analysis.document_kind is DocumentKind.NATIVE:
         reasons.append(
-            "the embedded text layer is reliable, so native extraction best preserves "
-            "words and numeric values"
+            "embedded text is available for native extraction; rendering support "
+            "and content uncertainty are reported separately"
         )
         if analysis.complexity is Complexity.COMPLEX:
             reasons.append(
@@ -97,7 +99,9 @@ def _rationale(
 
 
 def _review_reasons(analysis: DocumentAnalysis) -> tuple[str, ...]:
-    reasons: list[str] = []
+    reasons: list[str] = [
+        "automated checks do not independently verify transcription, numeric cells or reading order"
+    ]
     if analysis.document_kind is DocumentKind.SCAN:
         reasons.append("scan output has no native text reference for exactness checks")
     elif analysis.document_kind is DocumentKind.MIXED:

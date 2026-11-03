@@ -57,6 +57,8 @@ def test_convert_json_is_not_polluted_by_engine_output(tmp_path, capsys) -> None
     )
     payload = json.loads(capsys.readouterr().out)
     assert payload["canonical_engine"] == "pymupdf4llm"
+    assert payload["validation_scope"] == "heuristic_checks"
+    assert payload["content_accuracy"] == "unverified"
 
 
 def test_bare_pdf_path_is_a_desktop_friendly_convert_alias(tmp_path, capsys) -> None:

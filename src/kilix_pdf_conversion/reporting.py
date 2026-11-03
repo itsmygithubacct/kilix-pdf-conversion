@@ -32,6 +32,8 @@ def write_run_report(
         "# Conversion report",
         "",
         f"- Status: **{status.value}**",
+        "- Content accuracy: **not independently verified**",
+        "- Status and score describe automated checks, not a percentage of correct content.",
         f"- Document class: **{analysis.document_kind.value}**",
         f"- Layout complexity: **{analysis.complexity.value}**",
         f"- Pages: {analysis.page_count}",
@@ -49,7 +51,7 @@ def write_run_report(
             "",
             "## Candidates",
             "",
-            "| Engine | Conversion | Quality | Score | Runtime | Recall | Tables | Images |",
+            "| Engine | Conversion | Checks | Heuristic score | Runtime | Supported-text agreement | Tables | Images |",
             "|---|---|---|---:|---:|---:|---:|---:|",
         ]
     )
@@ -95,9 +97,11 @@ def write_run_report(
             "",
             "## Interpretation",
             "",
-            "The canonical file is the highest-ranked candidate that passed the configured "
-            "quality gates. Candidate outputs remain available for direct comparison. "
-            "The source PDF remains authoritative for visual and numeric verification.",
+            "The canonical file is the highest-ranked usable candidate under the configured "
+            "checks. A pass means no covered issue was detected; a warning requires review. "
+            "Neither status verifies transcription, numeric cells or reading order. "
+            "Extracted text can itself be inaccurate, especially in invisible OCR layers. "
+            "Candidate outputs remain available for comparison with the visible source pages.",
             "",
         ]
     )

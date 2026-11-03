@@ -1,13 +1,14 @@
 # Kilix PDF Conversion
 
-Kilix PDF Conversion is a validated, multi-engine PDF-to-Markdown workflow. It
-uses fast native extraction when a PDF has trustworthy embedded text, adds
+Kilix PDF Conversion is a multi-engine PDF-to-Markdown workflow with explicit
+source and output checks. It uses fast native extraction for embedded text, adds
 Granite-Docling when visual layout analysis is useful, and can escalate scans
 to an independent Marker OCR pass.
 
 The project does not assume that the most expensive output is the best output.
-Every candidate is retained, measured, and quality-gated before one file is
-selected as canonical.
+Every candidate is retained and checked before one file is selected as canonical.
+Scores are heuristics; transcription, numeric cells and reading order are not
+independently verified by a pass. Uncertain source text is reported for review.
 
 ## Why this workflow
 
@@ -22,13 +23,14 @@ therefore analyzes first and routes by document type:
 
 | Document | Initial conversion |
 |---|---|
-| Reliable native text, simple layout | PyMuPDF4LLM |
-| Reliable native text, complex layout | PyMuPDF4LLM + Granite hybrid |
+| Extractable native text, simple layout | PyMuPDF4LLM |
+| Extractable native text, complex layout | PyMuPDF4LLM + Granite hybrid |
 | Mixed native and image-only pages | PyMuPDF4LLM + Granite pure-VLM |
 | Image-only scan | Granite pure-VLM |
 
-Marker is an optional fallback when the first-stage candidates do not pass the
-quality gates. The forensic profile runs every installed engine.
+Marker is an optional fallback for concrete conversion/check failures.
+Uncertain source evidence alone retains a usable native result for review and
+does not start another OCR model. The forensic profile runs every installed engine.
 
 ## Features
 
@@ -118,9 +120,11 @@ prompt and generated counts, stop cause, limits and timing. Complete trailing pa
 tokens are removed without stripping ordinary characters. A generation cap or
 incomplete DocTags fails conversion. `[granite].max_new_tokens` defaults to 8192;
 the effective limit also respects the remaining configured context. Syntax and
-successful conversion do not establish content correctness. Hybrid substitutes
-PDF text into predicted text regions; it does not correct table cells or reading
-order, and a missing or incorrect PDF text layer can damage hybrid output.
+successful conversion do not establish content correctness. Hybrid preserves
+model text unless a complete backend crop has supported visible-text evidence
+and agrees with the whole item after whitespace normalization. Empty, partial,
+hidden or conflicting crops retain the original model item. `hybrid-text.json`
+records each decision. Hybrid does not correct table cells or reading order.
 
 The chart-enrichment lifecycle helper is integrated, but chart extraction stays
 unavailable until accepted, pinned classifier and chart assets are supplied.
@@ -251,15 +255,21 @@ See [the output contract](docs/OUTPUT_CONTRACT.md) for details.
 ## Quality policy
 
 A candidate fails by default when it is empty or tiny, contains a runaway
-short-line repetition, has critically low recall against a trustworthy native
+short-line repetition unsupported by a trusted source, has critically low recall against supported visible
 text layer, still contains invisible image placeholders, or references an
 image outside its local `assets/` bundle. Missing captions, collapsed table
 widths, weaker-but-noncritical recall, and empty display math produce warnings
 and lower the score.
 
-Validation is deliberately conservative. Passing means “suitable as the best
-available candidate under these checks,” not “identical to the PDF.” The source
-PDF remains authoritative for charts, formulas, and numeric verification.
+Invisible OCR can be accurate or corrupt. Agreement with that layer does not
+verify visible content, and disagreement does not by itself fail conversion.
+Only pages with supported visible-text evidence supply agreement references.
+Legitimate repeated values in those references are preserved. Unknown source
+support produces warnings; image text and unsupported geometry remain unverified.
+
+Passing means no issue covered by the configured checks was detected. Scores
+are not accuracy percentages. Review the visible source pages for charts,
+formulas, numeric values and reading order, even when extraction checks pass.
 
 See [validation](docs/VALIDATION.md) for the complete policy.
 

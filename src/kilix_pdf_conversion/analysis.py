@@ -7,6 +7,7 @@ import statistics
 from pathlib import Path
 
 from .models import Complexity, DocumentAnalysis, DocumentKind, PageSignal
+from .text_evidence import SourceTextEvidence, TextTrust, inspect_page_text
 from .util import sha256_file
 
 TABLE_REFERENCE = re.compile(r"(?i)\btable\s+([0-9]{1,3})\b")
@@ -109,6 +110,7 @@ def analyze_pdf(
         figure_caption_numbers: set[int] = set()
         replacement_characters = 0
         native_characters = 0
+        text_evidence = []
 
         for index, page in enumerate(document):
             text = page.get_text("text", sort=True)
@@ -119,6 +121,7 @@ def analyze_pdf(
             table_caption_numbers.update(int(value) for value in TABLE_REFERENCE.findall(text))
             figure_caption_numbers.update(int(value) for value in FIGURE_REFERENCE.findall(text))
             page_images.append(len(page.get_images(full=True)))
+            text_evidence.append(inspect_page_text(page))
             if _looks_multi_column(blocks, page.rect.width):
                 multi_column_pages.add(index)
 
@@ -151,6 +154,12 @@ def analyze_pdf(
         max_table_columns: dict[int, int] = {}
         drawing_counts: dict[int, int] = {}
         warnings: list[str] = []
+        source_evidence = SourceTextEvidence(tuple(text_evidence))
+        if source_evidence.trust is not TextTrust.TRUSTED:
+            warnings.append(
+                "the extracted text has uncertain rendering support; agreement with it "
+                "does not verify visible content"
+            )
 
         for index in table_scan_pages:
             page = document[index]
@@ -187,6 +196,7 @@ def analyze_pdf(
                     max_table_columns=max_table_columns.get(index, 0),
                     multi_column=index in multi_column_pages,
                     reliable_text=index in reliable_pages,
+                    source_text_trust=text_evidence[index].trust.value,
                 )
             )
 
@@ -250,6 +260,7 @@ def analyze_pdf(
             complexity_score=round(complexity_score, 3),
             pages=tuple(page_signals),
             warnings=tuple(warnings),
+            source_text_evidence=source_evidence.summary(),
         )
     finally:
         document.close()

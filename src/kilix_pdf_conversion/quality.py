@@ -9,11 +9,11 @@ from urllib.parse import unquote, urlsplit
 from .config import ValidationSettings
 from .models import (
     DocumentAnalysis,
-    DocumentKind,
     EngineName,
     QualityReport,
     QualityStatus,
 )
+from .text_evidence import TextTrust, inspect_source_text
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+(?:['.-][a-z0-9]+)*")
 TABLE_CAPTION_LINE = re.compile(
@@ -166,17 +166,18 @@ def validate_markdown(
 
     native_recall: float | None = None
     native_precision: float | None = None
-    if analysis.document_kind is not DocumentKind.SCAN:
-        reference_tokens = normalize_tokens(extract_native_text(source))
-        if reference_tokens:
-            reference_counter = Counter(reference_tokens)
-            output_counter = Counter(tokens)
-            overlap = sum((reference_counter & output_counter).values())
-            native_recall = overlap / len(reference_tokens)
-            native_precision = overlap / len(tokens) if tokens else 0.0
+    evidence = inspect_source_text(source)
+    reference_tokens = normalize_tokens(evidence.reference_text)
+    if reference_tokens:
+        reference_counter = Counter(reference_tokens)
+        output_counter = Counter(tokens)
+        overlap = sum((reference_counter & output_counter).values())
+        native_recall = overlap / len(reference_tokens)
+        native_precision = overlap / len(tokens) if tokens else 0.0
 
     errors: list[str] = []
     warnings: list[str] = []
+    evidence_warnings: list[str] = []
     if markdown_bytes < settings.minimum_markdown_bytes:
         errors.append(
             f"output is {markdown_bytes} bytes; minimum is "
@@ -188,9 +189,21 @@ def validate_markdown(
         repeated_line is not None
         and repeated_count > settings.maximum_repeated_short_line_count
     ):
-        errors.append(
-            f"short line {repeated_line!r} repeats {repeated_count} times"
-        )
+        fragment = normalize_tokens(repeated_line, markdown=True)
+        supported_count = sum(
+            reference_tokens[i:i + len(fragment)] == fragment
+            for i in range(len(reference_tokens) - len(fragment) + 1)
+        ) if fragment else 0
+        if evidence.complete_reference and fragment and repeated_count > supported_count:
+            errors.append(
+                f"short line {repeated_line!r} repeats {repeated_count} times; "
+                f"the supported source contains {supported_count} occurrences"
+            )
+        elif not evidence.complete_reference or not fragment:
+            evidence_warnings.append(
+                f"short line {repeated_line!r} repeats {repeated_count} times; "
+                "source support for this repetition is unverified"
+            )
     if placeholder_count and settings.fail_on_image_placeholders:
         errors.append(f"output contains {placeholder_count} unresolved image placeholders")
     if broken_images:
@@ -214,8 +227,9 @@ def validate_markdown(
                 f"{settings.minimum_native_token_recall:.1%}"
             )
 
-    expected_tables = len(analysis.table_caption_numbers)
-    expected_figures = len(analysis.figure_caption_numbers)
+    # Captions inferred from a hidden layer are not authoritative either.
+    expected_tables = len({int(v) for v in TABLE_CAPTION_LINE.findall(evidence.reference_text)})
+    expected_figures = len({int(v) for v in FIGURE_CAPTION_LINE.findall(evidence.reference_text)})
     if expected_tables and len(table_numbers) < max(1, round(expected_tables * 0.70)):
         warnings.append(
             f"only {len(table_numbers)} of {expected_tables} numbered tables are represented"
@@ -225,12 +239,26 @@ def validate_markdown(
             f"only {len(figure_numbers)} of {expected_figures} numbered figures are represented"
         )
     if (
-        analysis.max_detected_table_columns >= 4
+        evidence.complete_reference
+        and analysis.max_detected_table_columns >= 4
         and maximum_columns < analysis.max_detected_table_columns * 0.65
     ):
         warnings.append(
             "maximum Markdown table width is substantially below the source detector"
         )
+
+    # Source uncertainty alone retains a useful native/OCR extraction for review;
+    # it is not an automatic request to load another expensive model.
+    fallback_recommended = bool(errors or warnings)
+    warnings.extend(evidence_warnings)
+    if evidence.trust is not TextTrust.TRUSTED:
+        warnings.append(
+            f"source text is {evidence.trust.value}; only render-supported pages "
+            "are used for agreement checks; content accuracy is unverified"
+        )
+        fallback_recommended |= evidence.trust is TextTrust.SUSPECT
+    if any(page.image_content_unchecked for page in evidence.pages):
+        warnings.append("text inside source images has not been independently checked")
 
     score = 100.0
     score -= len(errors) * 30
@@ -279,4 +307,6 @@ def validate_markdown(
         empty_math_block_count=empty_math_count,
         errors=tuple(errors),
         warnings=tuple(warnings),
+        source_text_evidence=evidence.summary(),
+        fallback_recommended=fallback_recommended,
     )

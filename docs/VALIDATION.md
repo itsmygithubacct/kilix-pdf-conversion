@@ -1,76 +1,84 @@
 # Validation
 
-## Hard failures
+Status and score describe automated checks. They do not independently verify
+transcription, numeric cells, tables or reading order. Every quality report and
+workflow manifest records `content_accuracy: unverified`; the score is labeled
+as a heuristic. A selected canonical file can still require review.
 
-The default policy rejects a candidate when:
+## Source evidence
 
-- Markdown is below the minimum byte size;
-- it contains no searchable tokens;
-- one short nonblank line repeats above the configured threshold;
-- an invisible image placeholder remains;
-- an image reference is missing, absolute, external, outside the local
-  `assets/` tree, or resolves through a symlink outside the bundle;
-- native-token recall is below 65 percent for a non-scan PDF.
+Text being extractable is insufficient to make it a trustworthy reference.
+The native-only inspector uses rendering mode, opacity, character mapping and
+geometry, painting order, raster presence and a low-resolution rendered ink
+check. It never uses evaluation labels or silently runs neural OCR.
 
-The repeated-short-line check catches generative decoding loops while ignoring
-ordinary blank lines.
+- **Trusted:** inspected text has supported visible rendering and geometry,
+  with no unresolved invisible spans or possible occlusion. This describes
+  reference usability, not semantic correctness or verified font mappings.
+- **Suspect:** observable contradictions such as unmapped characters,
+  off-page text or a text box without rendered ink require review.
+- **Unknown:** invisible OCR, image-only content, unsupported geometry,
+  possible occlusion or unavailable inspection cannot establish a reference.
+  Accurate and corrupt invisible OCR can both be unknown.
 
-## Warnings
+Only trusted pages contribute to native-text agreement. Reports name those
+pages; untrusted pages never contribute authoritative text or caption labels.
+Image content remains unchecked even when the visible native text is supported.
+Rotation/crop configurations without a supported mapping and inspection work
+beyond the bounded raster/observation budget return unknown, preserving extraction.
 
-Warnings are emitted when:
+The inspector does not prove that Unicode mappings match glyph meaning, that
+an OCR layer is correct, or that a model interpreted a figure correctly. Review
+is still required. No absence of a detected contradiction certifies accuracy.
 
-- native-token recall is below the configured target;
-- fewer than 70 percent of expected numbered tables are represented;
-- fewer than 70 percent of expected numbered figures are represented;
-- maximum Markdown table width is substantially below detected source width;
-- an empty display-math block is present.
+## Output requirements
 
-Warnings reduce the score and can trigger fallback engines when no initial
-candidate passes cleanly.
+The existing configured requirements remain enforced: insufficient Markdown
+size, no searchable tokens, unresolved image placeholders and missing, external,
+absolute or escaping image references fail the checks. Granite truncation,
+incomplete DocTags, timeouts and engine failures remain unsuccessful conversions.
+Minimum bytes is an artifact requirement, not an accuracy measurement.
 
-## Native-text comparison
+Critically low agreement with a supported visible-text reference remains a
+failure signal. Native-token recall below the configured target, absent trusted
+captions, collapsed table width and empty display math produce warnings. These
+checks are incomplete and do not establish numeric or reading-order correctness.
 
-The metric is diagnostic:
+Repeated short lines are checked against supported source multiplicity.
+Legitimate repeated values are not decoding loops. Unsupported excess against
+a complete trusted reference remains an error; with unknown source support,
+repetition is advisory. Neither path permits a truncated generation to succeed.
 
-1. extract sorted text from every PDF page;
-2. normalize HTML entities, quote variants, dashes, and Markdown links;
-3. tokenize case-insensitively;
-4. compute multiset recall and precision.
+## Guarded hybrid assembly
 
-It is not a human-corrected transcription score. PDF text can contain broken
-encoding, repeated page furniture, and chart labels in unusual order. For
-scans the metric is disabled.
+The model document is parsed intact. Each text item can be replaced only when
+its source/region has supported evidence, the crop is valid and nonempty, and
+its entire text agrees after whitespace normalization. Otherwise the model item
+is retained. Numeric strings, repeat multiplicity and item order are preserved;
+table cells are never substituted. Different words, partial crops and conflicting
+numbers do not select a winner by a similarity threshold.
 
-## Table checks
+`hybrid-text.json` retains model text, proposed backend text, source evidence and
+the decision. Original model text also remains in `orig` and generation traces.
+This conservative policy can normalize wrapping; it does not repair model OCR.
+Pure mode and chart enrichment lifecycle/gating remain separate.
 
-Markdown pipe tables count only when they contain a separator row. HTML tables
-also count. Maximum source and output column widths are compared as a coarse
-loss detector.
+## Selection and review
 
-Candidate caption counts use caption-like lines rather than prose references.
-They detect broad omission but cannot prove that table cells or figures are
-correct.
+Unknown source evidence forces review status rather than a verified pass, and
+it cannot create a content failure merely because neural text disagrees with a
+hidden layer. The native preference bonus is not awarded from untrusted text.
+A usable initial native result with uncertainty alone is retained for review
+without automatically loading another model. Concrete errors, suspect rendering
+or substantive warnings may still trigger planned fallback. Explicit engine,
+quality and forensic selections retain their comparison behavior.
 
-## Image checks
+Scans and mixed documents still require appropriate coverage; missing required
+engines are reported. Existing candidates remain available even when no canonical
+candidate can be selected. Recommendation policy and manifest versions prevent
+old circular-validation passes from being reused under this policy.
 
-The application asks engines to write referenced image assets. Every candidate
-reference must use a relative `assets/...` path that remains confined after
-normalization and symlink resolution. Remote URLs are rejected because the run
-bundle must remain self-contained. Invisible comment placeholders fail by
-default because they produce a misleadingly complete-looking Markdown file
-with no viewable figure.
-
-Independent source-page renders provide visual fallback for pages selected by
-image, table, vector-drawing, or multi-column signals. The analyzer retains a
-signal for every page; when the render cap is reached, selections are spread
-across the document rather than truncated to the first pages.
-
-## Selection limits
-
-The selected candidate remains subject to manual review for:
-
-- chart values and plotted relationships;
-- formulas and superscripts;
-- merged or spanning table cells;
-- unusual reading order;
-- handwriting and low-resolution scans.
+Local `assets/...` image confinement, symlink checks, staged-source identity and
+canonical hash validation remain enforced. Compare all uncertain results with
+visible source pages, particularly for charts, formulas, merged cells, repeated
+values, handwriting and multi-column layout.

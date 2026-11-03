@@ -220,6 +220,8 @@ def command_convert(args: argparse.Namespace) -> int:
         )
     payload = {
         "status": result.status.value,
+        "validation_scope": "heuristic_checks",
+        "content_accuracy": "unverified",
         "run_dir": str(result.run_dir),
         "canonical_engine": (
             result.canonical_engine.value if result.canonical_engine else None
@@ -230,6 +232,7 @@ def command_convert(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(f"status: {payload['status']}")
+        print("content accuracy: not independently verified (automated checks only)")
         print(f"run: {payload['run_dir']}")
         print(f"canonical: {payload['canonical_engine'] or 'none'}")
         print(f"manifest: {payload['manifest']}")
@@ -271,11 +274,14 @@ def command_batch(args: argparse.Namespace) -> int:
                         else None
                     ),
                 }
+            item.update(validation_scope="heuristic_checks", content_accuracy="unverified")
             results.append(item)
             if not args.json:
                 print(f"{source.name}: {item['status']}")
     if args.json:
         print(json.dumps(results, indent=2, sort_keys=True))
+    else:
+        print("content accuracy: not independently verified (automated checks only)")
     return 1 if failures else 0
 
 
@@ -293,11 +299,12 @@ def command_validate(args: argparse.Namespace) -> int:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:
         print(f"status: {report.status.value}")
-        print(f"score: {report.score:.1f}")
+        print(f"heuristic score: {report.score:.1f}")
+        print("content accuracy: not independently verified")
         print(f"tables: {report.table_block_count}")
         print(f"images: {report.image_reference_count}")
         if report.native_token_recall is not None:
-            print(f"native-token recall: {report.native_token_recall:.1%}")
+            print(f"supported-text agreement: {report.native_token_recall:.1%}")
         for message in report.errors:
             print(f"error: {message}")
         for message in report.warnings:
@@ -363,6 +370,7 @@ def command_interactive(args: argparse.Namespace) -> int:
             print(f"error: {error}", file=sys.stderr)
             continue
         print(f"status: {result.status.value}")
+        print("content accuracy: not independently verified (automated checks only)")
         print(f"run: {result.run_dir}")
         print(f"manifest: {result.manifest_path}")
 
@@ -370,7 +378,7 @@ def command_interactive(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kilix-pdf",
-        description="Validated multi-engine PDF-to-Markdown conversion",
+        description="PDF-to-Markdown conversion with source and output checks",
     )
     subparsers = parser.add_subparsers(dest="command")
 

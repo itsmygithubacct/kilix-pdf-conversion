@@ -131,16 +131,22 @@ class GraniteEngine(ConversionEngine):
         part_path = output_dir / ".document.md.part"
         started = time.monotonic()
         generation = []
+        hybrid_text = {}
         try:
             converter = self.converter
             runtime_engine = self._pipeline.build_pipe[0].engine
             runtime_engine.records.clear()
             result = converter.convert(source, raises_on_error=False)
             generation = list(runtime_engine.records)
+            hybrid_text = getattr(self._pipeline, "hybrid_text", {})
             (output_dir / "generation.json").write_text(
                 json.dumps({"model": self._identity, "pages": generation}, indent=2) + "\n",
                 encoding="utf-8",
             )
+            if self.hybrid:
+                (output_dir / "hybrid-text.json").write_text(
+                    json.dumps(hybrid_text, indent=2) + "\n", encoding="utf-8",
+                )
             if result.status is not ConversionStatus.SUCCESS:
                 errors = [str(error) for error in result.errors]
                 raise RuntimeError(
@@ -189,6 +195,7 @@ class GraniteEngine(ConversionEngine):
                     "image_mode": "referenced",
                     "model": self._identity,
                     "generation": generation,
+                    "hybrid_text": hybrid_text,
                 },
             )
         except EngineUnavailable:
@@ -204,7 +211,8 @@ class GraniteEngine(ConversionEngine):
                 elapsed_seconds=round(elapsed, 3),
                 output_bytes=0,
                 error=f"{type(error).__name__}: {error}",
-                metadata={"model": self._identity, "generation": generation},
+                metadata={"model": self._identity, "generation": generation,
+                          "hybrid_text": hybrid_text},
             )
         finally:
             self._release_unused_memory()

@@ -37,7 +37,7 @@ def plan_route(analysis: DocumentAnalysis, profile: Profile) -> RoutePlan:
         initial.append(EngineName.PYMUPDF)
         if complex_layout or profile in {Profile.QUALITY, Profile.FORENSIC}:
             initial.append(EngineName.GRANITE_HYBRID)
-            rationale.append("hybrid VLM adds visual structure without replacing native text")
+            rationale.append("hybrid VLM compares visual structure with guarded text substitution")
         else:
             fallback.append(EngineName.GRANITE_HYBRID)
         fallback.extend([EngineName.GRANITE_PURE, EngineName.MARKER])

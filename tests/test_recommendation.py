@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from kilix_pdf_conversion.models import (
     Complexity,
     DocumentKind,
@@ -14,13 +16,20 @@ from .helpers import analysis_stub
 
 def test_native_document_recommends_native_extraction(tmp_path) -> None:
     recommendation = recommend_conversion(
-        analysis_stub(tmp_path / "native.pdf"),
+        replace(analysis_stub(tmp_path / "native.pdf"),
+                source_text_evidence={"trust": "trusted"}),
         available_engines={EngineName.PYMUPDF},
     )
 
     assert recommendation.recommended_engine is EngineName.PYMUPDF
     assert recommendation.best_available_engine is EngineName.PYMUPDF
     assert recommendation.confidence is RecommendationConfidence.HIGH
+
+
+def test_text_quantity_alone_does_not_establish_recommendation_confidence(tmp_path) -> None:
+    recommendation = recommend_conversion(analysis_stub(tmp_path / "unknown.pdf"))
+    assert recommendation.recommended_engine is EngineName.PYMUPDF
+    assert recommendation.confidence is RecommendationConfidence.LOW
 
 
 def test_complex_native_document_adds_hybrid_comparison(tmp_path) -> None:

@@ -203,6 +203,24 @@ def test_cache_rejects_changed_conversion_settings(tmp_path) -> None:
             workflow.convert(source)
 
 
+def test_old_quality_pass_cannot_be_reused_as_new_validation(tmp_path) -> None:
+    source = make_native_pdf(tmp_path / "source.pdf")
+    config = AppConfig(workflow=WorkflowSettings(
+        profile=Profile.FAST, output_root=tmp_path / "runs", render_visual_pages=False,
+    ))
+    with Workflow(config) as workflow:
+        first = workflow.convert(source)
+    old = json.loads(first.manifest_path.read_text())
+    old["schema_version"] = 2
+    old.pop("content_accuracy")
+    first.manifest_path.write_text(json.dumps(old))
+    before = first.manifest_path.read_bytes()
+    with Workflow(config) as workflow:
+        with pytest.raises(RuntimeError, match="unsupported manifest"):
+            workflow.convert(source)
+    assert first.manifest_path.read_bytes() == before
+
+
 def test_model_engine_switch_releases_the_previous_model(monkeypatch) -> None:
     workflow = Workflow(AppConfig())
     hybrid = StubEngine()

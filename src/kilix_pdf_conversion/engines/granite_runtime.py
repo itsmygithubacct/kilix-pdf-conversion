@@ -6,6 +6,7 @@ The upstream page renderer, DocTags assembly and hybrid backend remain in use.
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from functools import cache
 from pathlib import Path
@@ -15,6 +16,7 @@ from docling.datamodel.pipeline_options import VlmPipelineOptions
 from docling.models.inference_engines.vlm.base import VlmEngineOutput, VlmEngineType
 from docling.models.stages.vlm_convert.vlm_convert_model import VlmConvertModel
 from docling.pipeline.vlm_pipeline import VlmPipeline
+from docling_core.types.doc import BoundingBox, CoordOrigin, TextItem
 from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
@@ -22,6 +24,7 @@ from transformers import (
     StopStringCriteria,
 )
 
+from ..text_evidence import TextTrust, choose_hybrid_text, inspect_source_text
 from .base import EngineUnavailable
 from .granite_support import REPOSITORY, REVISION, generation_summary
 
@@ -129,12 +132,73 @@ def granite_pipeline_class(base=VlmPipeline):
     """Allow the separately maintained enrichment lifecycle to be the base."""
     class LocalGranitePipeline(base):
         def _initialize_new_runtime_system(self, pipeline_options):
-            self.force_backend_text = pipeline_options.vlm_options.force_backend_text
+            self.guarded_backend_text = pipeline_options.vlm_options.force_backend_text
+            # Always preserve the model document before making owned, auditable
+            # substitution decisions. The upstream path overwrites even with "".
+            self.force_backend_text = False
+            self.hybrid_text = {}
             self.keep_images = pipeline_options.generate_page_images
             self.build_pipe = [LocalGraniteStage(
                 pipeline_options.vlm_options,
                 pipeline_options.granite_model_directory,
                 pipeline_options.accelerator_options,
             )]
+
+        def _turn_dt_into_doc(self, conv_res):
+            document = super()._turn_dt_into_doc(conv_res)
+            self.hybrid_text = {}
+            if not self.guarded_backend_text:
+                return document
+            evidence = inspect_source_text(Path(conv_res.input.file))
+            pages = {p.page_number: p for p in evidence.pages}
+            decisions = []
+            for element, _level in document.iterate_items():
+                if not isinstance(element, TextItem) or not element.prov:
+                    continue
+                provenance = element.prov[0]
+                number = provenance.page_no
+                page = next((p for p in conv_res.pages if p.page_no == number), None)
+                parsed_page = document.pages.get(number)
+                source_page = pages.get(number)
+                trust = source_page.trust if source_page else TextTrust.UNKNOWN
+                geometry_valid = bool(page and page.size and parsed_page and source_page)
+                crop = None
+                if geometry_valid:
+                    geometry_valid = all(math.isfinite(value) and value > 0 for value in (
+                        page.size.width, page.size.height,
+                        parsed_page.size.width, parsed_page.size.height,
+                        source_page.width, source_page.height,
+                    ))
+                if geometry_valid:
+                    box = provenance.bbox.to_top_left_origin(page_height=parsed_page.size.height)
+                    scale_x = page.size.width / parsed_page.size.width
+                    scale_y = page.size.height / parsed_page.size.height
+                    crop = BoundingBox(
+                        l=box.l * scale_x, t=box.t * scale_y,
+                        r=box.r * scale_x, b=box.b * scale_y,
+                        coord_origin=CoordOrigin.TOPLEFT,
+                    )
+                    geometry_valid = (
+                        all(math.isfinite(v) for v in crop.as_tuple())
+                        and 0 <= crop.l < crop.r <= source_page.width
+                        and 0 <= crop.t < crop.b <= source_page.height
+                    )
+                proposed = self.extract_text_from_backend(page, crop) if geometry_valid else ""
+                original = element.text
+                decision = choose_hybrid_text(
+                    original, proposed, trust, geometry_valid=geometry_valid,
+                )
+                element.text = decision.text
+                # orig and raw generation retain the original model text.
+                decisions.append({
+                    "item": element.self_ref, "page": number, "source_trust": trust.value,
+                    "action": decision.action, "reason": decision.reason,
+                    "conflicting_text": decision.conflicting_text,
+                    "geometry_valid": geometry_valid,
+                    "model_text": original, "backend_text": proposed,
+                    "selected_text": decision.text,
+                })
+            self.hybrid_text = {"source_evidence": evidence.summary(), "decisions": decisions}
+            return document
 
     return LocalGranitePipeline
