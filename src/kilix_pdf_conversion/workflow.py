@@ -275,6 +275,14 @@ class Workflow:
         *,
         explicit_engines: tuple[EngineName, ...] | None = None,
     ) -> WorkflowResult:
+        if self.config.granite.chart_extraction:
+            # A native route or cached native result cannot satisfy this request.
+            # If the asset gate later opens, chart-capable selection must also be
+            # implemented before a workflow can safely accept the request.
+            from .engines.granite_engine import _require_chart_assets
+
+            _require_chart_assets()
+            raise EngineUnavailable("Chart-enabled workflow routing is not yet available")
         source = source.expanduser().resolve()
         analysis = analyze_pdf(
             source,

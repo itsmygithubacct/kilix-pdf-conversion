@@ -432,7 +432,10 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--force", action="store_true")
         command.add_argument("--no-source", action="store_true")
         command.add_argument("--no-visual-pages", action="store_true")
-        command.add_argument("--chart-extraction", action="store_true")
+        command.add_argument(
+            "--chart-extraction", action="store_true",
+            help="request chart extraction (currently unavailable until its assets are accepted)",
+        )
         command.add_argument("--json", action="store_true")
 
     convert = subparsers.add_parser("convert", help="convert one PDF")
