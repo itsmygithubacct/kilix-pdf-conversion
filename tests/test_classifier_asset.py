@@ -3,7 +3,6 @@
 import hashlib
 import os
 import socket
-from pathlib import Path
 
 import pytest
 
@@ -53,7 +52,8 @@ def test_malformed_receipt_refused_and_not_modified(tmp_path, monkeypatch):
 
 def test_synthetic_asset_checks_every_file_and_refuses_corruption(tmp_path, monkeypatch):
     directory = synthetic_asset(tmp_path, monkeypatch)
-    assert classifier_asset.verify_classifier_asset() == directory
+    snapshot = classifier_asset.verify_classifier_asset()
+    assert snapshot.read("model.onnx") == b"not real weights"
     (directory / "model.onnx").write_bytes(b"bad real weights")
     with pytest.raises(EngineUnavailable, match="hash mismatch"):
         classifier_asset.verify_classifier_asset()
@@ -90,10 +90,10 @@ def test_workflow_calls_preparation_but_still_refuses_decoder(tmp_path, monkeypa
 
 
 def test_verification_does_not_open_network_for_synthetic_assets(tmp_path, monkeypatch):
-    directory = synthetic_asset(tmp_path, monkeypatch)
+    synthetic_asset(tmp_path, monkeypatch)
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("unexpected network connection")
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)
-    assert classifier_asset.verify_classifier_asset() == Path(directory)
+    assert classifier_asset.verify_classifier_asset().read("model.onnx") == b"not real weights"

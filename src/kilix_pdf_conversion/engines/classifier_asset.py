@@ -6,15 +6,17 @@ import hashlib
 import json
 import os
 import stat
+from collections.abc import Mapping
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
+from types import MappingProxyType
 
 from .base import EngineUnavailable
 from .classifier_binding import (
     REPOSITORY,
     REVISION,
     pinned_classifier_options,
-    verify_classifier_metadata,
 )
 
 ASSET_ID = "documentfigureclassifier-v2.5"
@@ -67,8 +69,33 @@ def _require_classifier_receipt() -> None:
         raise EngineUnavailable("Classifier first-use receipt is invalid") from error
 
 
-def verify_classifier_asset() -> Path:
-    """Verify receipt and every selected local classifier file; never download."""
+@dataclass(frozen=True, slots=True)
+class VerifiedClassifierAsset:
+    """An immutable in-memory copy; consumers must recheck its pinned manifest."""
+
+    _files: Mapping[str, bytes]
+
+    def read(self, name: str) -> bytes:
+        return self._files[name]
+
+    def _verified_copy(self) -> dict[str, bytes]:
+        expected = _manifest()["files"]
+        copied = dict(self._files)
+        if set(copied) != set(expected):
+            raise EngineUnavailable("Classifier snapshot file set mismatch")
+        for name, item in expected.items():
+            data = copied[name]
+            if (type(data) is not bytes or len(data) != item["bytes"]
+                    or hashlib.sha256(data).hexdigest() != item["sha256"]):
+                raise EngineUnavailable(f"Classifier snapshot hash mismatch: {name}")
+        return copied
+
+    def assert_integrity(self) -> None:
+        self._verified_copy()
+
+
+def verify_classifier_asset() -> VerifiedClassifierAsset:
+    """Copy and verify every selected classifier file after checking the receipt."""
     manifest = _manifest()
     _require_classifier_receipt()
     root = os.environ.get("KILIX_CONTENT_ROOT")
@@ -77,6 +104,7 @@ def verify_classifier_asset() -> Path:
     directory = (Path(root).expanduser() / "assets" / ASSET_ID).resolve()
     if not directory.is_dir():
         raise EngineUnavailable("Classifier asset directory is missing")
+    verified = {}
     for relative, expected in manifest["files"].items():
         path = directory / relative
         try:
@@ -92,18 +120,20 @@ def verify_classifier_asset() -> Path:
                 info = os.fstat(stream.fileno())
                 if not stat.S_ISREG(info.st_mode) or info.st_size != expected["bytes"]:
                     raise EngineUnavailable(f"Classifier asset size mismatch: {relative}")
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                data = stream.read(expected["bytes"] + 1)
+                digest = hashlib.sha256(data).hexdigest()
         except OSError as error:
             raise EngineUnavailable(f"Classifier asset unavailable: {relative}") from error
-        if digest != expected["sha256"]:
+        if len(data) != expected["bytes"] or digest != expected["sha256"]:
             raise EngineUnavailable(f"Classifier asset hash mismatch: {relative}")
-    return directory
+        verified[relative] = data
+    return VerifiedClassifierAsset(MappingProxyType(verified))
 
 
 def prepare_classifier_stage():
     """Bind verified metadata and pinned options; never initialize an engine."""
-    directory = verify_classifier_asset()
-    verify_classifier_metadata(directory)
+    snapshot = verify_classifier_asset()
+    snapshot.assert_integrity()
     try:
         from docling.datamodel.picture_classification_options import (
             DocumentPictureClassifierOptions,
@@ -114,4 +144,4 @@ def prepare_classifier_stage():
         "document_figure_classifier_v2"
     ).model_copy(deep=True)
     options.engine_options.compile_model = False
-    return directory, pinned_classifier_options(options)
+    return snapshot, pinned_classifier_options(options)
