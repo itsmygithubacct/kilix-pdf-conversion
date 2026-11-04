@@ -9,13 +9,23 @@ from pathlib import Path
 from ..config import GraniteSettings
 from ..models import EngineName, EngineResult
 from .base import ConversionEngine, EngineUnavailable
+from .classifier_asset import prepare_classifier_stage
 from .granite_support import REPOSITORY, REVISION, check_runtime, verify_asset
 
 
 def _require_chart_assets() -> None:
-    # No accepted classifier/chart manifest is supplied by this candidate.
-    # Keep this boundary closed even though the lifecycle helper is integrated.
-    raise EngineUnavailable("Chart extraction requires accepted, pinned classifier and chart assets")
+    # Verify the classifier on the actual request path, but keep the separate
+    # chart decoder and workflow routing gate closed until independently qualified.
+    try:
+        prepare_classifier_stage()
+    except EngineUnavailable as error:
+        raise EngineUnavailable(
+            f"Chart extraction requires accepted, pinned classifier and chart assets: {error}"
+        ) from error
+    raise EngineUnavailable(
+        "Chart extraction requires accepted, pinned classifier and chart assets: "
+        "chart decoder and routing are not qualified"
+    )
 
 
 def _relative_asset_references(markdown: str, assets_dir: Path) -> str:
