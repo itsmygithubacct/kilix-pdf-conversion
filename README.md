@@ -36,8 +36,8 @@ selected as canonical.
 ## Quick start
 
 Python 3.11 or newer and `uv` are required. The base runtime is built from the
-checked-in `runtime/uv.lock` and contains PyMuPDF4LLM only; Granite and Marker
-are optional extras installed separately (see
+checked-in `runtime/uv.lock` and contains PyMuPDF4LLM only; the layout-model and
+OCR engines are optional extras installed separately (see
 [installation](docs/installation.md)).
 
 ~~~sh
@@ -102,7 +102,7 @@ rules are in [docs/workflow.md](docs/workflow.md).
 ## Documentation
 
 - [docs/installation.md](docs/installation.md): the managed runtime, the
-  Granite and Marker extras, and the development targets.
+  optional engine extras, and the development targets.
 - [docs/usage.md](docs/usage.md): command examples.
 - [docs/workflow.md](docs/workflow.md): why the workflow routes, profiles,
   output layout and quality policy.
