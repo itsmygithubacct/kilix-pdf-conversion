@@ -67,7 +67,8 @@ associations and `kilix pdf FILE` use.
 Conversion options: `--profile fast|balanced|quality|forensic`, repeated
 `--engine pymupdf4llm|granite-hybrid|granite-pure-vlm|marker`, `--device
 auto|cpu|cuda`, `--output-root DIR`, `--force`, `--no-source`,
-`--no-visual-pages` and `--chart-extraction`. Every command accepts `--json`.
+`--no-visual-pages` and `--chart-extraction`. Every command except
+`interactive` accepts `--json`.
 Worked examples are in [docs/usage.md](docs/usage.md).
 
 ## How it works
