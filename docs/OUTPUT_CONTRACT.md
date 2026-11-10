@@ -31,8 +31,13 @@ directory is optional and contains selected source-page renders plus an index.
 ~~~text
 conversions/<engine>/document.md
 conversions/<engine>/assets/*
+conversions/page-ocr/ocr-pages.json
 quality/<engine>.json
 ~~~
+
+**ocr-pages.json** records, for each page read by page OCR, the engine used,
+the router's choice and reasons, any fallback, and the page measurements. See
+[page OCR](OCR.md).
 
 Candidate Markdown links are relative to their candidate directory. Links in
 **canonical.md** are rewritten to include the candidate path.

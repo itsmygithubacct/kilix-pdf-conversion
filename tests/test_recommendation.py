@@ -55,6 +55,7 @@ def test_mixed_document_prefers_marker_when_granite_is_unavailable(tmp_path) -> 
     assert recommendation.complete_coverage_engines == (
         EngineName.GRANITE_PURE,
         EngineName.MARKER,
+        EngineName.PAGE_OCR,
     )
 
 

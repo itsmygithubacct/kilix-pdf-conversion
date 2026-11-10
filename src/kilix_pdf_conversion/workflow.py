@@ -40,6 +40,8 @@ MODEL_ENGINES = {
     EngineName.MARKER,
 }
 MANIFEST_SCHEMA_VERSION = 4
+# Mirrors ocr.policy.ROUTER_POLICY_VERSION without importing numpy at load time.
+OCR_ROUTER_POLICY_VERSION = 1
 
 
 class Workflow:
@@ -51,7 +53,10 @@ class Workflow:
     def _installed_engines(self) -> frozenset[EngineName]:
         if self._available_engines is None:
             self._available_engines = available_engine_names(
-                detect_capabilities(model_directory=self.config.granite.model_directory)
+                detect_capabilities(
+                    model_directory=self.config.granite.model_directory,
+                    ocr_settings=self.config.ocr,
+                )
             )
         return self._available_engines
 
@@ -83,6 +88,7 @@ class Workflow:
             "schema_version": 1,
             "recommendation_policy_version": policy_version,
             "text_evidence_policy_version": TEXT_EVIDENCE_POLICY_VERSION,
+            "ocr_router_policy_version": OCR_ROUTER_POLICY_VERSION,
             "settings": settings,
             "route": {
                 "profile": plan.profile.value,
@@ -90,7 +96,10 @@ class Workflow:
                 "fallback_engines": [engine.value for engine in plan.fallback_engines],
             },
         }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        # Paths (model directories) are fingerprinted as their text.
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
         return sha256(encoded).hexdigest()
 
     def _cached_result(
@@ -224,11 +233,13 @@ class Workflow:
             return {
                 EngineName.GRANITE_PURE: 4.0,
                 EngineName.MARKER: 3.0,
+                EngineName.PAGE_OCR: 2.0,
             }.get(engine, 0.0)
         return {
             EngineName.GRANITE_PURE: 3.0,
             EngineName.PYMUPDF: 1.0,
             EngineName.MARKER: 1.0,
+            EngineName.PAGE_OCR: 1.0,
         }.get(engine, 0.0)
 
     def _choose(

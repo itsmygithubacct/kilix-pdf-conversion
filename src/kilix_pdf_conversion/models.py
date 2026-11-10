@@ -22,6 +22,7 @@ class EngineName(StrEnum):
     GRANITE_HYBRID = "granite-hybrid"
     GRANITE_PURE = "granite-pure-vlm"
     MARKER = "marker"
+    PAGE_OCR = "page-ocr"
 
 
 class Profile(StrEnum):

@@ -83,7 +83,11 @@ def _print_analysis(analysis) -> None:
 
 
 def command_doctor(args: argparse.Namespace) -> int:
-    capabilities = detect_capabilities()
+    config = load_config(getattr(args, "config", None))
+    capabilities = detect_capabilities(
+        model_directory=config.granite.model_directory,
+        ocr_settings=config.ocr,
+    )
     if args.json:
         print(json.dumps(capabilities, indent=2, sort_keys=True))
     else:
@@ -96,6 +100,10 @@ def command_doctor(args: argparse.Namespace) -> int:
         accelerator = capabilities["accelerator"]
         granite = capabilities["granite"]
         print("Granite: " + ("ready on CPU" if granite["available"] else granite["error"]))
+        for name, item in capabilities["ocr"]["engines"].items():
+            label = {"tesseract": "Tesseract", "rapidocr": "RapidOCR"}.get(name, name)
+            print(f"{label}: " + (f"ready {item['version']}" if item["available"]
+                                  else item["error"]))
         print(
             "CUDA: "
             + (
@@ -149,7 +157,10 @@ def command_plan(args: argparse.Namespace) -> int:
 def command_recommend(args: argparse.Namespace) -> int:
     config = _configured(args)
     analysis = _analysis(args.source, config)
-    capabilities = detect_capabilities(model_directory=config.granite.model_directory)
+    capabilities = detect_capabilities(
+        model_directory=config.granite.model_directory,
+        ocr_settings=config.ocr,
+    )
     recommendation = recommend_conversion(
         analysis,
         config.workflow.profile,
@@ -375,6 +386,81 @@ def command_interactive(args: argparse.Namespace) -> int:
         print(f"manifest: {result.manifest_path}")
 
 
+IMAGE_DPI_RANGE = (70, 1200)
+
+
+def _image_dpi(image) -> int | None:
+    """The DPI an image declares, when it is plausible for a scan."""
+    declared = image.info.get("dpi")
+    if not declared:
+        return None
+    try:
+        dpi = round(float(declared[0]))
+    except (TypeError, ValueError, IndexError):
+        return None
+    low, high = IMAGE_DPI_RANGE
+    return dpi if low <= dpi <= high else None
+
+
+def command_ocr(args: argparse.Namespace) -> int:
+    """Read page images with the router's choice of Tesseract or RapidOCR."""
+    config = load_config(args.config)
+    settings = config.ocr if args.engine is None else replace(config.ocr, engine=args.engine)
+    try:
+        from PIL import Image, UnidentifiedImageError
+
+        from .ocr.reader import OcrReader
+    except ImportError as error:
+        print(f"error: page OCR needs {error.name}; rebuild the frozen runtime",
+              file=sys.stderr)
+        return 2
+    reader = OcrReader(settings)
+    records = []
+    failed = 0
+    try:
+        for source in args.images:
+            if source.suffix.lower() == ".pdf":
+                raise ValueError(f"{source} is a PDF; use 'kilix-pdf convert' for PDFs")
+            try:
+                with Image.open(source) as opened:
+                    opened.load()
+                    image = opened.convert("RGB")
+                    dpi = _image_dpi(opened)
+            except UnidentifiedImageError as error:
+                raise ValueError(f"{source} is not a readable image") from error
+            except Image.DecompressionBombError as error:
+                raise ValueError(f"{source} is too large to read: {error}") from error
+            if args.route_only:
+                decision = reader.route(image)
+                records.append({"image": str(source), **decision.to_dict()})
+                if not args.json:
+                    print(f"{source}: {decision.engine}")
+                    for reason in decision.reasons:
+                        print(f"- {reason}")
+                continue
+            try:
+                reading = reader.read(image, dpi=dpi)
+            except RuntimeError as error:
+                failed += 1
+                records.append({"image": str(source), "error": str(error)})
+                print(f"error: {source}: {error}", file=sys.stderr)
+                continue
+            records.append({"image": str(source), "dpi": dpi, "text": reading.text,
+                            **reading.to_dict()})
+            if not args.json:
+                if len(args.images) > 1:
+                    print(f"==> {source} ({reading.engine}) <==")
+                sys.stdout.write(reading.text)
+                if reading.fallback:
+                    print(f"note: {source}: {reading.fallback}", file=sys.stderr)
+    finally:
+        reader.close()
+    if args.json:
+        print(json.dumps(records if len(records) != 1 else records[0],
+                         indent=2, sort_keys=True, ensure_ascii=False))
+    return 1 if failed else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kilix-pdf",
@@ -393,6 +479,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor", help="inspect installed capabilities")
     doctor.add_argument("--json", action="store_true")
+    _add_config_argument(doctor)
     doctor.set_defaults(handler=command_doctor)
 
     inspect_parser = subparsers.add_parser("inspect", help="analyze a PDF")
@@ -449,6 +536,24 @@ def build_parser() -> argparse.ArgumentParser:
     add_conversion_options(batch)
     batch.set_defaults(handler=command_batch)
 
+    ocr = subparsers.add_parser(
+        "ocr",
+        help="read page images, choosing Tesseract or RapidOCR per image",
+    )
+    ocr.add_argument("images", type=Path, nargs="+")
+    ocr.add_argument(
+        "--engine",
+        choices=["auto", "tesseract", "rapidocr"],
+        help="override the configured choice; auto routes each image",
+    )
+    ocr.add_argument(
+        "--route-only", action="store_true",
+        help="show which engine each image would use, and why, without reading it",
+    )
+    ocr.add_argument("--json", action="store_true")
+    _add_config_argument(ocr)
+    ocr.set_defaults(handler=command_ocr)
+
     validate = subparsers.add_parser("validate", help="audit one Markdown conversion")
     validate.add_argument("source", type=Path)
     validate.add_argument("markdown", type=Path)
@@ -480,6 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "plan",
         "convert",
         "batch",
+        "ocr",
         "validate",
     }
     if arguments[0] not in commands and not arguments[0].startswith("-"):

@@ -4,7 +4,7 @@ RUNTIME_DIR ?= .runtime
 RUNTIME_PROJECT ?= runtime
 RUNTIME_PY := $(RUNTIME_DIR)/bin/python
 RUNTIME_ENV := $(abspath $(RUNTIME_DIR))
-UV_DEV := "$(UV)" run --no-project --python "$(PYTHON)" --with-editable . --with pytest --with ruff --with build
+UV_DEV := "$(UV)" run --no-project --python "$(PYTHON)" --with-editable '.[ocr]' --with pytest --with ruff --with build
 
 .DEFAULT_GOAL := help
 
@@ -49,6 +49,7 @@ runtime:
 		--project "$(RUNTIME_PROJECT)" --frozen --no-dev \
 		--no-install-project --python "$(PYTHON)"
 	"$(RUNTIME_PY)" -c 'import pymupdf; pymupdf.no_recommend_layout(); import pymupdf4llm'
+	"$(RUNTIME_PY)" -c 'import onnxruntime, rapidocr'
 
 runtime-check:
 	@test -x "$(RUNTIME_PY)" || { echo 'runtime missing; run make runtime' >&2; exit 1; }

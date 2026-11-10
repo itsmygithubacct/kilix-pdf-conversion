@@ -15,6 +15,7 @@ recommend primary, comparison, and fallback engines
    +--> Granite hybrid visual structure + backend text
    +--> Granite pure-VLM visual OCR
    +--> Marker independent OCR fallback
+   +--> page OCR: Tesseract or RapidOCR chosen per page (docs/OCR.md)
    |
    v
 candidate-specific assets and Markdown
@@ -87,7 +88,7 @@ native PDF text layer. The candidate with the strongest status and adjusted
 score is selected. Document-kind priors break close ties:
 
 - native documents favor PyMuPDF4LLM, then Granite hybrid;
-- scans favor Granite pure-VLM, then Marker;
+- scans favor Granite pure-VLM, then Marker, then page OCR;
 - mixed documents favor Granite pure-VLM while retaining the native baseline.
 
 The canonical file is copied from one candidate. Cross-engine synthesis is out

@@ -43,7 +43,7 @@ def test_scan_uses_pure_vlm_then_marker(tmp_path) -> None:
     analysis = analysis_stub(tmp_path / "x.pdf", kind=DocumentKind.SCAN)
     plan = plan_route(analysis, Profile.BALANCED)
     assert plan.initial_engines == (EngineName.GRANITE_PURE,)
-    assert plan.fallback_engines == (EngineName.MARKER,)
+    assert plan.fallback_engines == (EngineName.MARKER, EngineName.PAGE_OCR)
 
 
 def test_forensic_profile_runs_every_engine(tmp_path) -> None:

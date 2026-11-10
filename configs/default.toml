@@ -21,6 +21,13 @@ chart_extraction = false
 [marker]
 device = "auto"
 
+[ocr]
+engine = "auto"
+dpi = 200
+language = "eng"
+threads = 4
+page_timeout = 120
+
 [validation]
 minimum_markdown_bytes = 200
 minimum_native_token_recall = 0.90

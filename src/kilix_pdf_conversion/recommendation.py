@@ -13,7 +13,7 @@ from .models import (
 )
 from .routing import plan_route
 
-RECOMMENDATION_POLICY_VERSION = 2
+RECOMMENDATION_POLICY_VERSION = 3
 
 
 def _deduplicate(engines: Collection[EngineName]) -> tuple[EngineName, ...]:
@@ -35,17 +35,20 @@ def _document_priority(analysis: DocumentAnalysis) -> tuple[EngineName, ...]:
             EngineName.GRANITE_HYBRID,
             EngineName.GRANITE_PURE,
             EngineName.MARKER,
+            EngineName.PAGE_OCR,
         )
     if analysis.document_kind is DocumentKind.MIXED:
         return (
             EngineName.GRANITE_PURE,
             EngineName.MARKER,
+            EngineName.PAGE_OCR,
             EngineName.PYMUPDF,
             EngineName.GRANITE_HYBRID,
         )
     return (
         EngineName.GRANITE_PURE,
         EngineName.MARKER,
+        EngineName.PAGE_OCR,
         EngineName.PYMUPDF,
         EngineName.GRANITE_HYBRID,
     )
@@ -144,7 +147,7 @@ def recommend_conversion(
     else:
         complete_coverage = tuple(
             engine
-            for engine in (EngineName.GRANITE_PURE, EngineName.MARKER)
+            for engine in (EngineName.GRANITE_PURE, EngineName.MARKER, EngineName.PAGE_OCR)
             if engine in route_candidates
         )
 

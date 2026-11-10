@@ -3,7 +3,8 @@
 Kilix PDF Conversion is a multi-engine PDF-to-Markdown workflow with explicit
 source and output checks. It uses fast native extraction for embedded text, adds
 Granite-Docling when visual layout analysis is useful, and can escalate scans
-to an independent Marker OCR pass.
+to an independent Marker OCR pass or to CPU page OCR that picks Tesseract or
+RapidOCR for each page.
 
 The project does not assume that the most expensive output is the best output.
 Every candidate is retained and checked before one file is selected as canonical.
@@ -28,7 +29,9 @@ therefore analyzes first and routes by document type:
 | Mixed native and image-only pages | PyMuPDF4LLM + Granite pure-VLM |
 | Image-only scan | Granite pure-VLM |
 
-Marker is an optional fallback for concrete conversion/check failures.
+Marker is an optional fallback for concrete conversion/check failures. Page
+OCR is the last fallback and, in the base runtime, the engine that gives scans
+complete coverage when Granite is not installed.
 Uncertain source evidence alone retains a usable native result for review and
 does not start another OCR model. The forensic profile runs every installed engine.
 
@@ -41,6 +44,8 @@ does not start another OCR model. The forensic profile runs every installed engi
 - PyMuPDF4LLM native-text baseline;
 - Granite-Docling pure-VLM and hybrid modes;
 - optional Marker OCR candidate;
+- CPU page OCR with a per-page choice of Tesseract or RapidOCR (PP-OCRv6 small),
+  column-aware reading order, and verified, never-downloaded models;
 - referenced image assets instead of invisible placeholders;
 - independent visual page renders for difficult pages;
 - atomic source staging, Markdown, asset, and manifest writes;
@@ -131,6 +136,18 @@ unavailable until accepted, pinned classifier and chart assets are supplied.
 The adapter fails before constructing any chart model. Lifecycle tests with
 substituted predictions do not establish numerical chart accuracy.
 
+### Page OCR
+
+The base runtime includes RapidOCR and ONNX Runtime. Page OCR also needs the
+Debian packages `tesseract-ocr` and `tesseract-ocr-eng`, and the two accepted
+PP-OCRv6 small assets under `$KILIX_CONTENT_ROOT/assets`. Either engine alone
+is enough; **kilix-pdf doctor** shows which are ready. See [page OCR](docs/OCR.md).
+
+~~~sh
+kilix-pdf ocr page.png
+kilix-pdf ocr --route-only page.png
+~~~
+
 ### Marker
 
 ~~~sh
@@ -203,7 +220,7 @@ Commands accept **--json** for machine-readable output. Use
 | fast | PyMuPDF4LLM only; useful for trusted native-text corpora |
 | balanced | Route by text reliability and visual complexity; default |
 | quality | Adds broader OCR comparison for mixed/scanned documents |
-| forensic | Runs PyMuPDF4LLM, both Granite modes, and Marker |
+| forensic | Runs PyMuPDF4LLM, both Granite modes, Marker, and page OCR |
 
 Explicit **--engine** options override automatic routing.
 

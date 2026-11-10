@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 - 2026-11-10
+
+- Add the **page-ocr** engine: each page is rendered and read with Tesseract 5
+  or RapidOCR 3.10.0 running PaddlePaddle's PP-OCRv6 small ONNX models, chosen
+  per page from image measurements. RapidOCR is the default; Tesseract takes
+  clean upright pages that hold a figure-sized block. Every decision is
+  recorded with its reasons in `ocr-pages.json`.
+- Order RapidOCR's text boxes by recursive gutter and break cuts, so
+  multi-column pages read column by column.
+- Verify the two PP-OCRv6 assets by pinned size and SHA-256 and build the
+  models from the verified bytes. Nothing is downloaded.
+- Route scans and mixed documents to page OCR after Marker, and native
+  documents last; the quality and forensic profiles run it as a candidate.
+  Recommendation policy version 3.
+- Add `kilix-pdf ocr` for images, Tesseract and RapidOCR status to
+  `kilix-pdf doctor`, and an `[ocr]` configuration section.
+- Add `rapidocr==3.10.0` and `onnxruntime==1.31.1` to the frozen base runtime
+  and an `ocr` extra for development installs.
+
 ## 0.3.1 - 2026-08-10
 
 - Build the managed application runtime from the frozen, base-only

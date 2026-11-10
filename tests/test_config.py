@@ -20,6 +20,14 @@ page_batch_size = 2
 
 [marker]
 device = "cuda"
+
+[ocr]
+engine = "tesseract"
+dpi = 300
+language = "eng+deu"
+threads = 2
+page_timeout = 30
+model_directory = "/srv/ocr-models"
 """,
         encoding="utf-8",
     )
@@ -28,6 +36,12 @@ device = "cuda"
     assert config.granite.device == "cpu"
     assert config.granite.page_batch_size == 2
     assert config.marker.device == "cuda"
+    assert config.ocr.engine == "tesseract"
+    assert config.ocr.dpi == 300
+    assert config.ocr.language == "eng+deu"
+    assert config.ocr.threads == 2
+    assert config.ocr.page_timeout == 30
+    assert str(config.ocr.model_directory) == "/srv/ocr-models"
     overridden = with_overrides(config, profile=Profile.FAST, device="cpu")
     assert overridden.workflow.profile is Profile.FAST
     assert overridden.granite.device == "cpu"
@@ -45,6 +59,13 @@ device = "cuda"
         ("[granite]\nmax_new_tokens = 0\n", "at least 1"),
         ("[workflow]\nunknown = true\n", "unknown option"),
         ("[mystery]\nvalue = true\n", "unknown configuration section"),
+        ("[ocr]\nengine = \"paddle\"\n", "auto, tesseract, or rapidocr"),
+        ("[ocr]\ndpi = 50\n", "at least 72"),
+        ("[ocr]\nlanguage = \"eng; rm\"\n", "language codes joined by"),
+        ("[ocr]\nthreads = 0\n", "at least 1"),
+        ("[ocr]\npage_timeout = 0\n", "greater than 0"),
+        ("[ocr]\nmodel_directory = 1\n", "filesystem path string"),
+        ("[ocr]\nunknown = 1\n", "unknown option"),
     ],
 )
 def test_invalid_configuration_is_rejected(tmp_path, content, message) -> None:
@@ -53,3 +74,12 @@ def test_invalid_configuration_is_rejected(tmp_path, content, message) -> None:
 
     with pytest.raises(ValueError, match=message):
         load_config(path)
+
+
+def test_default_configuration_file_matches_ocr_defaults() -> None:
+    from pathlib import Path
+
+    from kilix_pdf_conversion.config import OCRSettings
+
+    config = load_config(Path(__file__).parents[1] / "configs" / "default.toml")
+    assert config.ocr == OCRSettings()

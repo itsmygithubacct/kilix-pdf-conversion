@@ -1,10 +1,13 @@
 [project]
 name = "kilix-pdf-runtime"
-version = "0.3.1"
+version = "0.4.0"
 requires-python = ">=3.11"
 dependencies = [
   "pymupdf>=1.27.1,<1.28",
   "pymupdf4llm==0.3.4",
+  # Page OCR: RapidOCR runs PaddlePaddle's PP-OCRv6 small ONNX models.
+  "rapidocr==3.10.0",
+  "onnxruntime==1.31.1",
 ]
 
 [tool.uv]

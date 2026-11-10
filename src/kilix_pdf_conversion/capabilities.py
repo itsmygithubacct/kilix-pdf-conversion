@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from .config import OCRSettings
 from .engines.base import EngineUnavailable
 from .engines.granite_support import REVISION, check_runtime, verify_asset
 from .models import EngineName
@@ -21,7 +22,25 @@ def _package(name: str, module: str | None = None) -> dict[str, Any]:
     return {"available": available, "version": package_version}
 
 
-def detect_capabilities(model_directory: Path | None = None) -> dict[str, Any]:
+def _ocr_capabilities(settings: OCRSettings) -> dict[str, Any]:
+    try:
+        from .ocr.reader import OcrReader
+    except ImportError as error:
+        missing = f"page OCR needs {error.name}; rebuild the frozen runtime"
+        engines = {"tesseract": {"available": False, "error": missing},
+                   "rapidocr": {"available": False, "error": missing}}
+    else:
+        engines = OcrReader(settings).availability()
+    return {
+        "available": any(item["available"] for item in engines.values()),
+        "engines": engines,
+    }
+
+
+def detect_capabilities(
+    model_directory: Path | None = None,
+    ocr_settings: OCRSettings | None = None,
+) -> dict[str, Any]:
     capabilities: dict[str, Any] = {
         "python": platform.python_version(),
         "base": {
@@ -49,6 +68,7 @@ def detect_capabilities(model_directory: Path | None = None) -> dict[str, Any]:
         }
     except EngineUnavailable as error:
         capabilities["granite"] = {"available": False, "error": str(error)}
+    capabilities["ocr"] = _ocr_capabilities(ocr_settings or OCRSettings())
     if capabilities["accelerator"]["torch"]["available"]:
         try:
             import torch
@@ -78,4 +98,6 @@ def available_engine_names(capabilities: dict[str, Any]) -> frozenset[EngineName
         engines.update({EngineName.GRANITE_HYBRID, EngineName.GRANITE_PURE})
     if capabilities["optional"]["marker"]["available"]:
         engines.add(EngineName.MARKER)
+    if capabilities.get("ocr", {}).get("available", False):
+        engines.add(EngineName.PAGE_OCR)
     return frozenset(engines)

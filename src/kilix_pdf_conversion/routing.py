@@ -40,20 +40,24 @@ def plan_route(analysis: DocumentAnalysis, profile: Profile) -> RoutePlan:
             rationale.append("hybrid VLM compares visual structure with guarded text substitution")
         else:
             fallback.append(EngineName.GRANITE_HYBRID)
-        fallback.extend([EngineName.GRANITE_PURE, EngineName.MARKER])
+        fallback.extend([EngineName.GRANITE_PURE, EngineName.MARKER, EngineName.PAGE_OCR])
     elif kind is DocumentKind.MIXED:
         initial.extend([EngineName.PYMUPDF, EngineName.GRANITE_PURE])
-        fallback.extend([EngineName.MARKER, EngineName.GRANITE_HYBRID])
+        fallback.extend([EngineName.MARKER, EngineName.PAGE_OCR, EngineName.GRANITE_HYBRID])
         rationale.append("mixed pages retain a native baseline and use visual OCR")
     else:
         initial.append(EngineName.GRANITE_PURE)
-        fallback.append(EngineName.MARKER)
+        fallback.extend([EngineName.MARKER, EngineName.PAGE_OCR])
         rationale.append("image-driven conversion is required for scan pages")
 
     if profile is Profile.QUALITY and kind is not DocumentKind.NATIVE:
-        initial.append(EngineName.MARKER)
-        fallback = [engine for engine in fallback if engine is not EngineName.MARKER]
-        rationale.append("quality profile adds an independent OCR candidate")
+        initial.extend([EngineName.MARKER, EngineName.PAGE_OCR])
+        fallback = [
+            engine
+            for engine in fallback
+            if engine not in {EngineName.MARKER, EngineName.PAGE_OCR}
+        ]
+        rationale.append("quality profile adds independent OCR candidates")
 
     if profile is Profile.FORENSIC:
         initial = [
@@ -61,6 +65,7 @@ def plan_route(analysis: DocumentAnalysis, profile: Profile) -> RoutePlan:
             EngineName.GRANITE_HYBRID,
             EngineName.GRANITE_PURE,
             EngineName.MARKER,
+            EngineName.PAGE_OCR,
         ]
         fallback = []
         rationale.append("forensic profile runs every engine")

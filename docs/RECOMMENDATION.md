@@ -13,14 +13,18 @@ inferior method appear appropriate.
 | Source classification | Recommended engine | Comparison | Complete-coverage fallback |
 |---|---|---|---|
 | Reliable native text, simple layout | PyMuPDF4LLM | none initially | Granite hybrid, then broader OCR |
-| Reliable native text, complex layout | PyMuPDF4LLM | Granite hybrid | Granite pure-VLM or Marker |
-| Mixed text and image-only pages | Granite pure-VLM | PyMuPDF4LLM baseline | Marker, then Granite hybrid |
-| Image-only scan | Granite pure-VLM | none in balanced mode | Marker |
+| Reliable native text, complex layout | PyMuPDF4LLM | Granite hybrid | Granite pure-VLM, Marker, then page OCR |
+| Mixed text and image-only pages | Granite pure-VLM | PyMuPDF4LLM baseline | Marker, page OCR, then Granite hybrid |
+| Image-only scan | Granite pure-VLM | none in balanced mode | Marker, then page OCR |
 
 The fast profile intentionally constrains the choice to PyMuPDF4LLM. The
-quality profile adds an independent OCR candidate for mixed documents and
-scans. The forensic profile runs every engine while retaining the same
+quality profile adds Marker and page OCR as independent OCR candidates for
+mixed documents and scans. The forensic profile runs every engine while retaining the same
 document-specific recommendation.
+
+Policy version 3 adds page OCR. It counts as complete coverage for mixed
+documents and scans. Its per-page engine choice is a separate policy described
+in [page OCR](OCR.md).
 
 ## Inputs
 
@@ -46,8 +50,8 @@ kilix-pdf recommend document.pdf --profile quality --json
 ~~~
 
 The command inspects package availability but does not initialize any model.
-For a scan with neither Granite nor Marker installed, **best_available_engine**
-is null; PyMuPDF4LLM is not presented as an adequate substitute. For a mixed
+For a scan with none of Granite, Marker or page OCR installed,
+**best_available_engine** is null; PyMuPDF4LLM is not presented as an adequate substitute. For a mixed
 document, a native extractor may be reported as **best_partial_engine**, but it
 does not satisfy the complete-page coverage requirement.
 
@@ -70,7 +74,7 @@ print(recommendation.review_reasons)
 Automatic **convert** calls this same function. The manifest preserves the
 recommendation and notes whether explicit **--engine** arguments overrode it.
 Under the balanced, quality, and forensic profiles, mixed documents and scans
-publish no canonical file unless Granite pure-VLM or Marker produces a
+publish no canonical file unless Granite pure-VLM, Marker or page OCR produces a
 non-failing complete-coverage candidate. Native-only partial output is retained
 for inspection. The explicitly constrained fast profile may still emit its
 native-only result.

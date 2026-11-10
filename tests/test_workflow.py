@@ -308,3 +308,22 @@ def test_partial_candidate_is_not_canonical_without_complete_coverage() -> None:
     )
 
     assert chosen is None
+
+
+def test_configured_model_directories_are_fingerprinted() -> None:
+    from pathlib import Path
+
+    from kilix_pdf_conversion.config import GraniteSettings, OCRSettings
+    from kilix_pdf_conversion.routing import plan_route
+
+    from .helpers import analysis_stub
+
+    plan = plan_route(analysis_stub(Path("x.pdf")), Profile.BALANCED)
+    plain = Workflow(AppConfig())._configuration_sha256(plan, 3)
+    granite = Workflow(AppConfig(granite=GraniteSettings(model_directory=Path("/m"))))
+    ocr = Workflow(AppConfig(ocr=OCRSettings(model_directory=Path("/m"))))
+    other = Workflow(AppConfig(ocr=OCRSettings(model_directory=Path("/n"))))
+    digests = {plain, granite._configuration_sha256(plan, 3), ocr._configuration_sha256(plan, 3),
+               other._configuration_sha256(plan, 3)}
+    assert len(digests) == 4
+    assert Workflow(AppConfig(ocr=OCRSettings(dpi=300)))._configuration_sha256(plan, 3) != plain

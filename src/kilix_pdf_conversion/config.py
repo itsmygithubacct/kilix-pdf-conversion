@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -129,6 +130,35 @@ class GraniteSettings:
         _require_integer(self.max_new_tokens, "granite.max_new_tokens", minimum=1, maximum=8192)
 
 
+OCR_ENGINES = frozenset({"auto", "tesseract", "rapidocr"})
+OCR_LANGUAGE = re.compile(r"^[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*$")
+
+
+@dataclass(frozen=True)
+class OCRSettings:
+    engine: str = "auto"
+    dpi: int = 200
+    language: str = "eng"
+    threads: int = 4
+    page_timeout: float = 120.0
+    model_directory: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.engine not in OCR_ENGINES:
+            raise ValueError("ocr.engine must be auto, tesseract, or rapidocr")
+        _require_integer(self.dpi, "ocr.dpi", minimum=72, maximum=600)
+        if type(self.language) is not str or not OCR_LANGUAGE.match(self.language):
+            raise ValueError("ocr.language must be Tesseract language codes joined by +")
+        _require_integer(self.threads, "ocr.threads", minimum=1, maximum=256)
+        if (
+            type(self.page_timeout) not in (int, float)
+            or not 0.0 < float(self.page_timeout) <= 3600.0
+        ):
+            raise ValueError("ocr.page_timeout must be greater than 0 and at most 3600")
+        if self.model_directory is not None and not isinstance(self.model_directory, Path):
+            raise ValueError("ocr.model_directory must be a filesystem path")
+
+
 @dataclass(frozen=True)
 class MarkerSettings:
     device: str = "auto"
@@ -172,6 +202,7 @@ class AppConfig:
     pymupdf: PyMuPDFSettings = PyMuPDFSettings()
     granite: GraniteSettings = GraniteSettings()
     marker: MarkerSettings = MarkerSettings()
+    ocr: OCRSettings = OCRSettings()
     validation: ValidationSettings = ValidationSettings()
 
     def __post_init__(self) -> None:
@@ -181,6 +212,7 @@ class AppConfig:
             (self.pymupdf, PyMuPDFSettings, "pymupdf"),
             (self.granite, GraniteSettings, "granite"),
             (self.marker, MarkerSettings, "marker"),
+            (self.ocr, OCRSettings, "ocr"),
             (self.validation, ValidationSettings, "validation"),
         )
         for value, value_type, label in expected:
@@ -217,6 +249,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         "pymupdf",
         "granite",
         "marker",
+        "ocr",
         "validation",
     }
     unknown_sections = sorted(set(data) - known_sections)
@@ -301,6 +334,26 @@ def load_config(path: Path | None = None) -> AppConfig:
     )
     marker_data = _section(data, "marker", frozenset({"device"}))
     marker = MarkerSettings(device=marker_data.get("device", "auto"))
+    ocr_data = _section(
+        data,
+        "ocr",
+        frozenset(
+            {"engine", "dpi", "language", "threads", "page_timeout", "model_directory"}
+        ),
+    )
+    ocr_model_directory = ocr_data.get("model_directory")
+    if ocr_model_directory is not None and not isinstance(ocr_model_directory, str):
+        raise ValueError("ocr.model_directory must be a filesystem path string")
+    ocr = OCRSettings(
+        engine=ocr_data.get("engine", "auto"),
+        dpi=ocr_data.get("dpi", 200),
+        language=ocr_data.get("language", "eng"),
+        threads=ocr_data.get("threads", 4),
+        page_timeout=ocr_data.get("page_timeout", 120),
+        model_directory=(
+            Path(ocr_model_directory) if ocr_model_directory is not None else None
+        ),
+    )
     validation_data = _section(
         data,
         "validation",
@@ -331,6 +384,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         pymupdf=pymupdf,
         granite=granite,
         marker=marker,
+        ocr=ocr,
         validation=validation,
     )
 
