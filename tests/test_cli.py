@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-from kilix_pdf_conversion.cli import main
+import pytest
+
+from kilix_pdf_conversion.cli import _batch_sources, main
 
 from .helpers import make_native_pdf
 
@@ -148,3 +150,32 @@ def test_ocr_reads_with_the_named_engine(tmp_path, monkeypatch, capsys) -> None:
     assert seen == ["tesseract"]
     assert record["dpi"] == 300
     assert record["text"].startswith("A deterministic source paragraph")
+
+
+def test_batch_pattern_cannot_escape_the_input_directory(tmp_path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    make_native_pdf(tmp_path / "outside.pdf")
+
+    with pytest.raises(ValueError, match="escapes the input directory"):
+        _batch_sources(input_dir, "../*.pdf")
+
+
+def test_batch_refuses_a_symlinked_pdf(tmp_path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    outside = make_native_pdf(tmp_path / "outside.pdf")
+    (input_dir / "linked.pdf").symlink_to(outside)
+
+    with pytest.raises(ValueError, match="symlinked batch input"):
+        _batch_sources(input_dir, "*.pdf")
+
+
+def test_batch_returns_only_regular_contained_files(tmp_path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    first = make_native_pdf(input_dir / "first.pdf")
+    second = make_native_pdf(input_dir / "second.pdf")
+    (input_dir / "not-a-file.pdf").mkdir()
+
+    assert _batch_sources(input_dir, "*.pdf") == (first.resolve(), second.resolve())

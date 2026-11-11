@@ -250,10 +250,31 @@ def command_convert(args: argparse.Namespace) -> int:
     return 1 if result.status is QualityStatus.FAIL else 0
 
 
+def _batch_sources(input_dir: Path, pattern: str) -> tuple[Path, ...]:
+    input_root = input_dir.expanduser().resolve()
+    if not input_root.is_dir():
+        raise ValueError(f"batch input is not a directory: {input_root}")
+    sources: list[Path] = []
+    for candidate in sorted(input_root.glob(pattern)):
+        if candidate.is_symlink():
+            raise ValueError(f"refusing symlinked batch input: {candidate}")
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(input_root)
+        except ValueError as error:
+            raise ValueError(
+                f"batch pattern escapes the input directory: {pattern!r}"
+            ) from error
+        sources.append(resolved)
+    return tuple(sources)
+
+
 def command_batch(args: argparse.Namespace) -> int:
     config = _configured(args)
     input_dir = args.input_dir.expanduser().resolve()
-    sources = sorted(path for path in input_dir.glob(args.pattern) if path.is_file())
+    sources = _batch_sources(input_dir, args.pattern)
     if not sources:
         print(f"no PDFs matched {args.pattern!r} in {input_dir}", file=sys.stderr)
         return 2

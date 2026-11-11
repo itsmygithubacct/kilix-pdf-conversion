@@ -1,39 +1,18 @@
 # Kilix PDF Conversion
 
-Kilix PDF Conversion is a multi-engine PDF-to-Markdown workflow with explicit
-source and output checks. It uses fast native extraction for embedded text, adds
+Kilix PDF Conversion is a multi-engine PDF-to-Markdown workflow. It
+uses fast native extraction when a PDF has trustworthy embedded text, adds
 Granite-Docling when visual layout analysis is useful, and can escalate scans
-to an independent Marker OCR pass or to CPU page OCR that picks Tesseract or
-RapidOCR for each page.
+to an independent Marker OCR pass or CPU page OCR using Tesseract or RapidOCR.
+
+Installable on demand from the Kilix content catalog as `kilix-pdf-conversion`
+(`kilix install kilix-pdf-conversion`). `kilix pdf [PDF]` installs it on first
+use and runs it in the current pane; the catalog pins the exact commit and
+builds only the base runtime (`make runtime`).
 
 The project does not assume that the most expensive output is the best output.
 Every candidate is retained and checked before one file is selected as canonical.
-Scores are heuristics; transcription, numeric cells and reading order are not
-independently verified by a pass. Uncertain source text is reported for review.
-
-## Why this workflow
-
-PDF conversion has three different problems:
-
-1. recover exact text and numeric values;
-2. recover reading order, tables, formulas, and figure placement;
-3. detect when an apparently valid conversion silently lost content.
-
-No single engine is uniformly best at all three. The default balanced profile
-therefore analyzes first and routes by document type:
-
-| Document | Initial conversion |
-|---|---|
-| Extractable native text, simple layout | PyMuPDF4LLM |
-| Extractable native text, complex layout | PyMuPDF4LLM + Granite hybrid |
-| Mixed native and image-only pages | PyMuPDF4LLM + Granite pure-VLM |
-| Image-only scan | Granite pure-VLM |
-
-Marker is an optional fallback for concrete conversion/check failures. Page
-OCR is the last fallback and, in the base runtime, the engine that gives scans
-complete coverage when Granite is not installed.
-Uncertain source evidence alone retains a usable native result for review and
-does not start another OCR model. The forensic profile runs every installed engine.
+Scores are heuristics; passing does not independently verify content accuracy.
 
 ## Features
 
@@ -44,8 +23,6 @@ does not start another OCR model. The forensic profile runs every installed engi
 - PyMuPDF4LLM native-text baseline;
 - Granite-Docling pure-VLM and hybrid modes;
 - optional Marker OCR candidate;
-- CPU page OCR with a per-page choice of Tesseract or RapidOCR (PP-OCRv6 small),
-  column-aware reading order, and verified, never-downloaded models;
 - referenced image assets instead of invisible placeholders;
 - independent visual page renders for difficult pages;
 - atomic source staging, Markdown, asset, and manifest writes;
@@ -56,252 +33,113 @@ does not start another OCR model. The forensic profile runs every installed engi
 - single-file and reusable batch workflows;
 - one resident model engine at a time for bounded accelerator memory.
 
-## Installation
+## Quick start
 
-Python 3.11 or newer and `uv` are required.
-
-### Plebian OS and Kilix runtime
-
-The managed runtime is created from the checked-in `runtime/uv.lock`.
-That lock contains only the small AGPL-compatible base runtime; optional model
-engines cannot leak into it. `--frozen` prevents installation from silently
-changing that dependency closure:
+Python 3.11 or newer and `uv` are required. The base runtime is built from the
+checked-in `runtime/uv.lock` and contains PyMuPDF4LLM only; the layout-model and
+OCR engines are optional extras installed separately (see
+[installation](docs/installation.md)).
 
 ~~~sh
 make runtime
 ./kilix-pdf doctor
 ./kilix-pdf
-~~~
-
-The no-argument launcher starts a guided terminal session. A PDF may also be
-opened directly, which is the path used by desktop launchers and file
-associations:
-
-~~~sh
 ./kilix-pdf report.pdf
 ~~~
 
-### Base and development tools
+With no argument on a terminal, `kilix-pdf` starts a guided session. A leading
+path that is not a command is treated as `convert`, which is what desktop file
+associations and `kilix pdf FILE` use.
 
-The Make targets provision their development tools through `uv`; they do not
-depend on pytest, Ruff, or build being installed in the system interpreter:
+## Usage
 
-~~~sh
-make test
-make lint
-make build
-~~~
-
-### Granite-Docling
-
-Granite has a separate frozen CPU runtime for Linux x86-64 and Python 3.12.8.
-The default launcher continues to use the native-only `.runtime`; select the
-optional `.runtime-granite` explicitly:
-
-~~~sh
-make runtime-granite
-KILIX_PDF_RUNTIME=granite ./kilix-pdf doctor --json
-KILIX_PDF_RUNTIME=granite ./kilix-pdf convert report.pdf --engine granite-pure-vlm
-~~~
-
-`runtime-granite/uv.lock` freezes the full dependency closure, including Docling
-2.118.0, Docling Core 2.90.0, Transformers 4.57.3 and CPU PyTorch 2.6.0. Merely
-installing the extra in another environment does not change the shell launcher.
-The frozen runtime uses two CPU threads, FP32, eager SDPA, the slow pinned image
-processor and one image per generation. CUDA and alternate runtime versions are
-not supported by this profile.
-
-Install/accept the Granite asset through the host's normal model acquisition
-flow. The host supplies `KILIX_CONTENT_ROOT`; the adapter verifies all files in
-its `assets/granite-docling-258m` directory against revision
-`982fe3b40f2fa73c365bdb1bcacf6c81b7184bfe`. For a standalone accepted copy, set
-`KILIX_GRANITE_MODEL_DIR` or `[granite].model_directory` to the model directory.
-Missing or mismatched files fail before loading. Conversion never downloads a
-replacement, requests `main`, or creates a license receipt.
-
-Successful Granite outputs include `document.json` and `generation.json` beside
-Markdown. The latter records the model identity, raw/cleaned text, generated IDs,
-prompt and generated counts, stop cause, limits and timing. Complete trailing pad
-tokens are removed without stripping ordinary characters. A generation cap or
-incomplete DocTags fails conversion. `[granite].max_new_tokens` defaults to 8192;
-the effective limit also respects the remaining configured context. Syntax and
-successful conversion do not establish content correctness. Hybrid preserves
-model text unless a complete backend crop has supported visible-text evidence
-and agrees with the whole item after whitespace normalization. Empty, partial,
-hidden or conflicting crops retain the original model item. `hybrid-text.json`
-records each decision. Hybrid does not correct table cells or reading order.
-
-The chart-enrichment lifecycle helper is integrated, but chart extraction stays
-unavailable until accepted, pinned classifier and chart assets are supplied.
-The adapter fails before constructing any chart model. Lifecycle tests with
-substituted predictions do not establish numerical chart accuracy.
-
-### Page OCR
-
-The base runtime includes RapidOCR and ONNX Runtime. Page OCR also needs the
-Debian packages `tesseract-ocr` and `tesseract-ocr-eng`, and the two accepted
-PP-OCRv6 small assets under `$KILIX_CONTENT_ROOT/assets`. Either engine alone
-is enough; **kilix-pdf doctor** shows which are ready. See [page OCR](docs/OCR.md).
-
-~~~sh
-kilix-pdf ocr page.png
-kilix-pdf ocr --route-only page.png
-~~~
-
-### Marker
-
-~~~sh
-uv pip install --python .venv/bin/python -e '.[marker]'
-~~~
-
-Marker and Granite have large, mutually incompatible model/runtime dependency
-closures and must use separate virtual environments. Neither is installed by
-the base runtime. The CLI can be invoked with the interpreter that owns
-the desired engine. The **--device** override applies to both model adapters,
-so **--device cpu** provides a low-memory Marker fallback. Review the model and
-code licenses in [the third-party notices](THIRD-PARTY-NOTICES.md) first.
-
-## Quick start
-
-Start the guided terminal interface:
-
-~~~sh
-kilix-pdf
-~~~
-
-Ask which program is best for a source PDF without loading a model:
-
-~~~sh
-kilix-pdf recommend report.pdf
-kilix-pdf recommend report.pdf --json
-~~~
-
-Inspect the raw signals or preview the complete route:
-
-~~~sh
-kilix-pdf inspect report.pdf
-kilix-pdf plan report.pdf
-~~~
-
-Run the balanced workflow:
-
-~~~sh
-kilix-pdf convert report.pdf --output-root ./output
-~~~
-
-Force a specific comparison:
-
-~~~sh
-kilix-pdf convert report.pdf \
-  --engine pymupdf4llm \
-  --engine granite-hybrid \
-  --output-root ./output
-~~~
-
-Convert a directory while reusing loaded model instances:
-
-~~~sh
-kilix-pdf batch ./pdfs --pattern '*.pdf' --output-root ./output
-~~~
-
-Audit an existing conversion:
-
-~~~sh
-kilix-pdf validate report.pdf converted.md --engine granite-hybrid
-~~~
-
-Commands accept **--json** for machine-readable output. Use
-**configs/default.toml** as a starting configuration.
-
-## Profiles
-
-| Profile | Behavior |
+| Command | What it does |
 |---|---|
-| fast | PyMuPDF4LLM only; useful for trusted native-text corpora |
-| balanced | Route by text reliability and visual complexity; default |
-| quality | Adds broader OCR comparison for mixed/scanned documents |
-| forensic | Runs PyMuPDF4LLM, both Granite modes, Marker, and page OCR |
+| `kilix-pdf` / `interactive` | guided terminal session |
+| `doctor` | report the installed engines and runtime capabilities |
+| `inspect PDF` | analyze the text layer and layout without converting |
+| `recommend PDF` | name the best engine and the best installed engine, without loading a model |
+| `plan PDF` | show the automatic route for the selected profile |
+| `convert PDF` | run the route, validate every candidate and select `canonical.md` |
+| `ocr IMAGE` | read an image with Tesseract or RapidOCR; `--route-only` previews the choice |
+| `batch DIR [--pattern GLOB]` | convert a directory, reusing loaded model instances |
+| `validate PDF MARKDOWN [--engine E]` | audit an existing conversion |
 
-Explicit **--engine** options override automatic routing.
+Conversion options: `--profile fast|balanced|quality|forensic`, repeated
+`--engine pymupdf4llm|granite-hybrid|granite-pure-vlm|marker|page-ocr`, `--device
+auto|cpu|cuda`, `--output-root DIR`, `--force`, `--no-source`,
+`--no-visual-pages` and `--chart-extraction`. Every command except
+`interactive` accepts `--json`.
+Worked examples are in [docs/usage.md](docs/usage.md).
 
-The recommendation routine distinguishes the ideal engine, the best installed
-engine with complete page coverage, and any partial baseline. For example, it
-will not claim that native-only extraction is sufficient for a scan merely
-because the OCR engines are absent. Automatic conversion uses this same routine
-and records its decision in the manifest. See
-[engine recommendation](docs/RECOMMENDATION.md).
+## How it works
 
-## Output
+```
+PDF --> content hash + analysis --> route (profile) --> engine candidates
+                                                         |
+          canonical.md <-- select <-- quality gates <----+
+```
 
-Each source is stored in a content-addressed directory:
+The balanced profile analyzes first and routes by document type:
 
-~~~text
-output/
-└── report--1a2b3c4d5e6f/
-    ├── analysis.json
-    ├── canonical.md
-    ├── events.jsonl
-    ├── manifest.json
-    ├── report.md
-    ├── source.pdf
-    ├── conversions/
-    │   ├── pymupdf4llm/
-    │   │   ├── document.md
-    │   │   └── assets/
-    │   └── granite-hybrid/
-    │       ├── document.md
-    │       └── assets/
-    ├── quality/
-    │   ├── pymupdf4llm.json
-    │   └── granite-hybrid.json
-    └── visual/
-        ├── index.md
-        └── page-0001.jpg
-~~~
+| Document | Initial conversion |
+|---|---|
+| Reliable native text, simple layout | PyMuPDF4LLM |
+| Reliable native text, complex layout | PyMuPDF4LLM + Granite hybrid |
+| Mixed native and image-only pages | PyMuPDF4LLM + Granite pure-VLM |
+| Image-only scan | Granite pure-VLM |
 
-The manifest fingerprints the effective route and settings plus the canonical
-file. A completed run is reused only when its source, configuration, schema,
-and canonical SHA-256 all match. Interrupted and forced runs are atomically
-moved under **output/.history/** before a clean run begins, so stale candidate
-assets cannot leak into a retry and prior evidence is not destroyed.
+Marker is an optional fallback for concrete conversion/check failures. Page
+OCR is the last fallback and, in the base runtime, the engine that gives scans
+complete coverage when Granite is not installed.
+Uncertain source evidence alone retains a usable native result for review and
+does not start another OCR model. The forensic profile runs every installed engine.
 
-**canonical.md** is a copied, link-adjusted candidate. It is not a synthetic
-merge. This avoids creating untraceable text by combining disagreeing engines.
-See [the output contract](docs/OUTPUT_CONTRACT.md) for details.
+Each source gets a content-addressed run directory holding the staged source,
+every candidate with its assets, per-candidate quality reports, a manifest and
+an event log. `canonical.md` is a copied, link-adjusted candidate, never a
+merge of engines. A completed run is reused only when source, configuration,
+schema and canonical SHA-256 all match; interrupted and forced runs are moved
+under `output/.history/` first. The full routing, profile, output and quality
+rules are in [docs/workflow.md](docs/workflow.md).
 
-## Quality policy
+See [page OCR](docs/OCR.md) for the base runtime’s OCR engines and model requirements.
 
-A candidate fails by default when it is empty or tiny, contains a runaway
-short-line repetition unsupported by a trusted source, has critically low recall against supported visible
-text layer, still contains invisible image placeholders, or references an
-image outside its local `assets/` bundle. Missing captions, collapsed table
-widths, weaker-but-noncritical recall, and empty display math produce warnings
-and lower the score.
+## Documentation
 
-Invisible OCR can be accurate or corrupt. Agreement with that layer does not
-verify visible content, and disagreement does not by itself fail conversion.
-Only pages with supported visible-text evidence supply agreement references.
-Legitimate repeated values in those references are preserved. Unknown source
-support produces warnings; image text and unsupported geometry remain unverified.
+- [docs/installation.md](docs/installation.md): the managed runtime, the
+  optional engine extras, and the development targets.
+- [docs/usage.md](docs/usage.md): command examples.
+- [docs/workflow.md](docs/workflow.md): why the workflow routes, profiles,
+  output layout and quality policy.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the pipeline, analysis, routing,
+  engines, selection, resume behaviour and extension points.
+- [docs/RECOMMENDATION.md](docs/RECOMMENDATION.md): engine recommendation.
+- [docs/OUTPUT_CONTRACT.md](docs/OUTPUT_CONTRACT.md): run identity, files and
+  reuse rules.
+- [docs/VALIDATION.md](docs/VALIDATION.md): hard failures, warnings and scoring.
+- [CHANGELOG.md](CHANGELOG.md): release history.
+- [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md): code and model licences.
 
-Passing means no issue covered by the configured checks was detected. Scores
-are not accuracy percentages. Review the visible source pages for charts,
-formulas, numeric values and reading order, even when extraction checks pass.
+## Related repositories
 
-See [validation](docs/VALIDATION.md) for the complete policy.
+- [kilix-content](https://github.com/itsmygithubacct/kilix-content#readme):
+  the catalog entry that pins and builds this repository.
+- [kilix](https://github.com/itsmygithubacct/kilix#readme): the `kilix pdf`
+  and `kilix install` verbs.
+- [kilix-pdf](https://github.com/itsmygithubacct/kilix-pdf#readme): the
+  separate terminal PDF viewer (`kilix-pdf-viewer`, `kilix pdf-view`).
 
-## Development
+## Part of Plebian-OS
 
-~~~sh
-make test
-make lint
-make verify
-make build
-~~~
-
-The unit tests create PDFs in temporary directories and do not require bundled
-document fixtures. Granite and Marker integration tests are intentionally
-separate from the fast unit suite.
+Kilix PDF Conversion is one of the repositories behind
+[Plebian-OS](https://github.com/itsmygithubacct/plebian-os#readme), a Debian
+install whose desktop is [Kilix](https://github.com/itsmygithubacct/kilix#readme)
+running the [Kilix 95](https://github.com/itsmygithubacct/kilix-95#readme)
+desktop through [Pleb](https://github.com/itsmygithubacct/pleb#readme).
+It is installed on demand from the Kilix content catalog, not shipped in the
+installer image. The map of every repository and how it ships is on the
+[components page](https://github.com/itsmygithubacct/plebian-os/blob/main/docs/components.md).
 
 ## License
 
