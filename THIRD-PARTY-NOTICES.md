@@ -40,6 +40,11 @@ their dependency closure. Each keeps its own licence:
 | idna | BSD-3-Clause |
 | tqdm | MPL-2.0 and MIT |
 | certifi | MPL-2.0 |
+| Colorama (Windows only) | BSD-3-Clause |
+
+colorlog and tqdm require Colorama 0.4.6 only on Windows
+(`sys_platform == 'win32'`). The lock records it, but a Linux runtime does not
+install it.
 
 The LGPL libraries are unmodified shared objects loaded at run time and can be
 replaced. Each wheel's own licence files are installed with it.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Name Colorama 0.4.6 (BSD-3-Clause) in `THIRD-PARTY-NOTICES.md`. colorlog
+  and tqdm require it only on Windows, so a Linux runtime does not install it.
+  A test now checks that every package in `runtime/uv.lock` is named there.
+
 ## 0.4.0 - 2026-11-10
 
 - Add the **page-ocr** engine: each page is rendered and read with Tesseract 5
